@@ -1,5 +1,5 @@
 use anyhow::Context;
-use glam::{vec3, vec4, Vec3, Vec4};
+use glam::{vec3, vec4, Mat4, Vec3, Vec4};
 use std::borrow::Cow;
 use wgpu::util::DeviceExt;
 use winit::{
@@ -71,6 +71,25 @@ impl Vertex {
     }
 }
 
+struct PerspectiveCamera {
+    eye: Vec3,
+    target: Vec3,
+    up: Vec3,
+
+    aspect_ratio: f32,
+    fov_y_rad: f32,
+    z_near: f32,
+    z_far: f32,
+}
+impl PerspectiveCamera {
+    fn to_view_proj_matrix(&self) -> Mat4 {
+        let view = Mat4::look_at_rh(self.eye, self.target, self.up);
+        let proj = Mat4::perspective_rh(self.fov_y_rad, self.aspect_ratio, self.z_near, self.z_far);
+
+        proj * view
+    }
+}
+
 fn main() -> anyhow::Result<()> {
     let wgpu_features = wgpu::Features::MULTIVIEW;
     let wgpu_limits = wgpu::Limits::default();
@@ -101,17 +120,6 @@ fn main() -> anyhow::Result<()> {
             source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("shader.wgsl"))),
         });
 
-    let pipeline_layout =
-        wgpu_state
-            .device
-            .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: None,
-                bind_group_layouts: &[],
-                push_constant_ranges: &[],
-            });
-
-    let swapchain_format = surface.get_supported_formats(&wgpu_state.adapter)[0];
-
     let triangle_vertex_buffer =
         wgpu_state
             .device
@@ -124,7 +132,6 @@ fn main() -> anyhow::Result<()> {
                 ]),
                 usage: wgpu::BufferUsages::VERTEX,
             });
-
     let vertex_buffer_layout = wgpu::VertexBufferLayout {
         array_stride: std::mem::size_of::<Vertex>() as _,
         step_mode: wgpu::VertexStepMode::Vertex,
@@ -142,6 +149,61 @@ fn main() -> anyhow::Result<()> {
         ],
     };
 
+    let mut camera = PerspectiveCamera {
+        eye: Vec3::ZERO,
+        target: vec3(0.0, 0.0, 1.0),
+        up: Vec3::Y,
+        aspect_ratio: {
+            let winit::dpi::PhysicalSize { width, height } = window.inner_size().cast::<f32>();
+            width / height
+        },
+        fov_y_rad: 90.0f32.to_radians(),
+        z_near: 0.05,
+        z_far: 1000.0,
+    };
+    let camera_buffer = wgpu_state
+        .device
+        .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Camera buffer"),
+            contents: bytemuck::cast_slice(&camera.to_view_proj_matrix().to_cols_array()),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+    let camera_bind_group_layout =
+        wgpu_state
+            .device
+            .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("camera_bind_group_layout"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+            });
+    let camera_bind_group = wgpu_state
+        .device
+        .create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("camera_bind_group"),
+            layout: &camera_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: camera_buffer.as_entire_binding(),
+            }],
+        });
+
+    let swapchain_format = surface.get_supported_formats(&wgpu_state.adapter)[0];
+    let pipeline_layout =
+        wgpu_state
+            .device
+            .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: None,
+                bind_group_layouts: &[&camera_bind_group_layout],
+                push_constant_ranges: &[],
+            });
     let render_pipeline =
         wgpu_state
             .device
@@ -174,6 +236,7 @@ fn main() -> anyhow::Result<()> {
 
     surface.configure(&wgpu_state.device, &config);
 
+    let start_time = std::time::Instant::now();
     event_loop.run(move |event, _, control_flow| {
         // Have the closure take ownership of the resources.
         // `event_loop.run` never returns, therefore we must do this to ensure
@@ -181,9 +244,6 @@ fn main() -> anyhow::Result<()> {
         #[cfg(feature = "xr")]
         let _ = &xr_state;
         let _ = (&wgpu_state, &shader, &pipeline_layout);
-
-        #[cfg(feature = "xr")]
-        let xr_frame_state = xr_state.as_mut().and_then(|x| x.pre_frame().unwrap());
 
         *control_flow = ControlFlow::Wait;
         match event {
@@ -195,39 +255,11 @@ fn main() -> anyhow::Result<()> {
                 config.width = size.width;
                 config.height = size.height;
                 surface.configure(&wgpu_state.device, &config);
+
+                camera.aspect_ratio = (size.width as f32) / (size.height as f32);
+
                 // On macos the window needs to be redrawn manually after resizing
                 window.request_redraw();
-            }
-            Event::RedrawRequested(_) => {
-                let frame = surface
-                    .get_current_texture()
-                    .expect("Failed to acquire next swap chain texture");
-                let view = frame
-                    .texture
-                    .create_view(&wgpu::TextureViewDescriptor::default());
-                let mut encoder = wgpu_state
-                    .device
-                    .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-                {
-                    let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                        label: None,
-                        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                            view: &view,
-                            resolve_target: None,
-                            ops: wgpu::Operations {
-                                load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                                store: true,
-                            },
-                        })],
-                        depth_stencil_attachment: None,
-                    });
-                    rpass.set_pipeline(&render_pipeline);
-                    rpass.set_vertex_buffer(0, triangle_vertex_buffer.slice(..));
-                    rpass.draw(0..3, 0..1);
-                }
-
-                wgpu_state.queue.submit(Some(encoder.finish()));
-                frame.present();
             }
             Event::WindowEvent {
                 event: WindowEvent::CloseRequested,
@@ -235,6 +267,46 @@ fn main() -> anyhow::Result<()> {
             } => *control_flow = ControlFlow::Exit,
             _ => {}
         }
+
+        #[cfg(feature = "xr")]
+        let xr_frame_state = xr_state.as_mut().and_then(|x| x.pre_frame().unwrap());
+
+        let frame = surface
+            .get_current_texture()
+            .expect("Failed to acquire next swap chain texture");
+        let view = frame
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
+        let mut encoder = wgpu_state
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+        {
+            let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: None,
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                        store: true,
+                    },
+                })],
+                depth_stencil_attachment: None,
+            });
+            rpass.set_pipeline(&render_pipeline);
+            rpass.set_vertex_buffer(0, triangle_vertex_buffer.slice(..));
+            rpass.set_bind_group(0, &camera_bind_group, &[]);
+            rpass.draw(0..3, 0..1);
+        }
+
+        camera.eye.z = start_time.elapsed().as_secs_f32().cos() - 1.0;
+        wgpu_state.queue.write_buffer(
+            &camera_buffer,
+            0,
+            bytemuck::cast_slice(&camera.to_view_proj_matrix().to_cols_array()),
+        );
+        wgpu_state.queue.submit(Some(encoder.finish()));
+        frame.present();
 
         #[cfg(feature = "xr")]
         if let Some((xr_state, xr_frame_state)) = xr_state.as_mut().zip(xr_frame_state) {
