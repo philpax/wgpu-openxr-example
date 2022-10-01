@@ -231,12 +231,13 @@ fn main() -> anyhow::Result<()> {
         format: swapchain_format,
         width: size.width,
         height: size.height,
-        present_mode: wgpu::PresentMode::Fifo,
+        present_mode: wgpu::PresentMode::Immediate,
     };
 
     surface.configure(&wgpu_state.device, &config);
 
     let start_time = std::time::Instant::now();
+    let (mut fps_timer, mut fps_count) = (std::time::Instant::now(), 0);
     event_loop.run(move |event, _, control_flow| {
         // Have the closure take ownership of the resources.
         // `event_loop.run` never returns, therefore we must do this to ensure
@@ -245,7 +246,9 @@ fn main() -> anyhow::Result<()> {
         let _ = &xr_state;
         let _ = (&wgpu_state, &shader, &pipeline_layout);
 
-        *control_flow = ControlFlow::Wait;
+        let mut cleared = false;
+
+        *control_flow = ControlFlow::Poll;
         match event {
             Event::WindowEvent {
                 event: WindowEvent::Resized(size),
@@ -261,11 +264,19 @@ fn main() -> anyhow::Result<()> {
                 // On macos the window needs to be redrawn manually after resizing
                 window.request_redraw();
             }
+            Event::MainEventsCleared => {
+                window.request_redraw();
+                cleared = true;
+            }
             Event::WindowEvent {
                 event: WindowEvent::CloseRequested,
                 ..
             } => *control_flow = ControlFlow::Exit,
             _ => {}
+        }
+
+        if !cleared {
+            return;
         }
 
         #[cfg(feature = "xr")]
@@ -311,6 +322,17 @@ fn main() -> anyhow::Result<()> {
         #[cfg(feature = "xr")]
         if let Some((xr_state, xr_frame_state)) = xr_state.as_mut().zip(xr_frame_state) {
             xr_state.post_frame(xr_frame_state).unwrap();
+        }
+
+        fps_count += 1;
+        if fps_timer.elapsed().as_millis() > 1_000 {
+            window.set_title(&format!(
+                "wgpu-openxr-example: {:.02} FPS",
+                (fps_count as f32) / fps_timer.elapsed().as_secs_f32()
+            ));
+
+            fps_count = 0;
+            fps_timer = std::time::Instant::now();
         }
     });
 }
