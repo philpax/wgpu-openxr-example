@@ -1,5 +1,7 @@
 use anyhow::Context;
+use glam::{vec3, vec4, Vec3, Vec4};
 use std::borrow::Cow;
+use wgpu::util::DeviceExt;
 use winit::{
     event::{Event, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
@@ -54,6 +56,21 @@ fn create_wgpu_state(
     ))
 }
 
+#[repr(C)]
+#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+struct Vertex {
+    position: [f32; 3],
+    color: [f32; 4],
+}
+impl Vertex {
+    fn new(position: Vec3, color: Vec4) -> Self {
+        Self {
+            position: position.to_array(),
+            color: color.to_array(),
+        }
+    }
+}
+
 fn main() -> anyhow::Result<()> {
     let wgpu_features = wgpu::Features::MULTIVIEW;
     let wgpu_limits = wgpu::Limits::default();
@@ -95,6 +112,36 @@ fn main() -> anyhow::Result<()> {
 
     let swapchain_format = surface.get_supported_formats(&wgpu_state.adapter)[0];
 
+    let triangle_vertex_buffer =
+        wgpu_state
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Vertex Buffer"),
+                contents: bytemuck::cast_slice(&[
+                    Vertex::new(vec3(-1.0, -1.0, 1.0), vec4(1.0, 0.0, 0.0, 1.0)),
+                    Vertex::new(vec3(0.0, 1.0, 1.0), vec4(0.0, 1.0, 0.0, 1.0)),
+                    Vertex::new(vec3(1.0, -1.0, 1.0), vec4(0.0, 0.0, 1.0, 1.0)),
+                ]),
+                usage: wgpu::BufferUsages::VERTEX,
+            });
+
+    let vertex_buffer_layout = wgpu::VertexBufferLayout {
+        array_stride: std::mem::size_of::<Vertex>() as _,
+        step_mode: wgpu::VertexStepMode::Vertex,
+        attributes: &[
+            wgpu::VertexAttribute {
+                offset: 0,
+                shader_location: 0,
+                format: wgpu::VertexFormat::Float32x3,
+            },
+            wgpu::VertexAttribute {
+                offset: std::mem::size_of::<[f32; 3]>() as _,
+                shader_location: 1,
+                format: wgpu::VertexFormat::Float32x4,
+            },
+        ],
+    };
+
     let render_pipeline =
         wgpu_state
             .device
@@ -104,7 +151,7 @@ fn main() -> anyhow::Result<()> {
                 vertex: wgpu::VertexState {
                     module: &shader,
                     entry_point: "vs_main",
-                    buffers: &[],
+                    buffers: &[vertex_buffer_layout],
                 },
                 fragment: Some(wgpu::FragmentState {
                     module: &shader,
@@ -168,13 +215,14 @@ fn main() -> anyhow::Result<()> {
                             view: &view,
                             resolve_target: None,
                             ops: wgpu::Operations {
-                                load: wgpu::LoadOp::Clear(wgpu::Color::GREEN),
+                                load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
                                 store: true,
                             },
                         })],
                         depth_stencil_attachment: None,
                     });
                     rpass.set_pipeline(&render_pipeline);
+                    rpass.set_vertex_buffer(0, triangle_vertex_buffer.slice(..));
                     rpass.draw(0..3, 0..1);
                 }
 
