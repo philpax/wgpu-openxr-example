@@ -5,13 +5,53 @@ use winit::{
     event_loop::{ControlFlow, EventLoop},
 };
 
+#[cfg(feature = "xr")]
 mod xr;
 
+#[allow(dead_code)]
 pub struct WgpuState {
     instance: wgpu::Instance,
     adapter: wgpu::Adapter,
     device: wgpu::Device,
     queue: wgpu::Queue,
+}
+
+fn create_wgpu_state(
+    window: &winit::window::Window,
+    wgpu_features: wgpu::Features,
+    wgpu_limits: wgpu::Limits,
+) -> anyhow::Result<(WgpuState, wgpu::Surface)> {
+    let instance = wgpu::Instance::new(wgpu::Backends::all());
+    let surface = unsafe { instance.create_surface(&window) };
+    let adapter =
+        futures::executor::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+            power_preference: wgpu::PowerPreference::default(),
+            force_fallback_adapter: false,
+            // Request an adapter which can render to our surface
+            compatible_surface: Some(&surface),
+        }))
+        .context("Failed to find an appropriate adapter")?;
+
+    // Create the logical device and command queue
+    let (device, queue) = futures::executor::block_on(adapter.request_device(
+        &wgpu::DeviceDescriptor {
+            label: None,
+            features: wgpu_features,
+            limits: wgpu_limits,
+        },
+        None,
+    ))
+    .context("Failed to create device")?;
+
+    Ok((
+        WgpuState {
+            instance,
+            adapter,
+            device,
+            queue,
+        },
+        surface,
+    ))
 }
 
 fn main() -> anyhow::Result<()> {
@@ -21,44 +61,18 @@ fn main() -> anyhow::Result<()> {
     let event_loop = EventLoop::new();
     let window = winit::window::Window::new(&event_loop)?;
 
-    let xr_enabled = std::env::args().any(|a| a == "--xr");
-    let (wgpu_state, surface, mut xr_state) = if xr_enabled {
+    #[cfg(feature = "xr")]
+    let (wgpu_state, surface, mut xr_state) = if std::env::args().any(|a| a == "--xr") {
         let (wgpu_state, xr_state) = xr::XrState::initialize_with_wgpu(wgpu_features, wgpu_limits)?;
         let surface = unsafe { wgpu_state.instance.create_surface(&window) };
         (wgpu_state, surface, Some(xr_state))
     } else {
-        let instance = wgpu::Instance::new(wgpu::Backends::all());
-        let surface = unsafe { instance.create_surface(&window) };
-        let adapter =
-            futures::executor::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
-                power_preference: wgpu::PowerPreference::default(),
-                force_fallback_adapter: false,
-                // Request an adapter which can render to our surface
-                compatible_surface: Some(&surface),
-            }))
-            .context("Failed to find an appropriate adapter")?;
-
-        // Create the logical device and command queue
-        let (device, queue) = futures::executor::block_on(adapter.request_device(
-            &wgpu::DeviceDescriptor {
-                label: None,
-                features: wgpu_features,
-                limits: wgpu_limits,
-            },
-            None,
-        ))
-        .context("Failed to create device")?;
-        (
-            WgpuState {
-                instance,
-                adapter,
-                device,
-                queue,
-            },
-            surface,
-            None,
-        )
+        let (wgpu_state, surface) = create_wgpu_state(&window, wgpu_features, wgpu_limits)?;
+        (wgpu_state, surface, None)
     };
+
+    #[cfg(not(feature = "xr"))]
+    let (wgpu_state, surface) = create_wgpu_state(&window, wgpu_features, wgpu_limits)?;
 
     let size = window.inner_size();
 
@@ -117,8 +131,11 @@ fn main() -> anyhow::Result<()> {
         // Have the closure take ownership of the resources.
         // `event_loop.run` never returns, therefore we must do this to ensure
         // the resources are properly cleaned up.
-        let _ = (&xr_state, &wgpu_state, &shader, &pipeline_layout);
+        #[cfg(feature = "xr")]
+        let _ = &xr_state;
+        let _ = (&wgpu_state, &shader, &pipeline_layout);
 
+        #[cfg(feature = "xr")]
         let xr_frame_state = xr_state.as_mut().and_then(|x| x.pre_frame().unwrap());
 
         *control_flow = ControlFlow::Wait;
@@ -171,6 +188,7 @@ fn main() -> anyhow::Result<()> {
             _ => {}
         }
 
+        #[cfg(feature = "xr")]
         if let Some((xr_state, xr_frame_state)) = xr_state.as_mut().zip(xr_frame_state) {
             xr_state.post_frame(xr_frame_state).unwrap();
         }
