@@ -18,78 +18,6 @@ pub struct WgpuState {
     queue: wgpu::Queue,
 }
 
-fn create_wgpu_state(
-    window: &winit::window::Window,
-    wgpu_features: wgpu::Features,
-    wgpu_limits: wgpu::Limits,
-) -> anyhow::Result<(WgpuState, wgpu::Surface)> {
-    let instance = wgpu::Instance::new(wgpu::Backends::all());
-    let surface = unsafe { instance.create_surface(&window) };
-    let adapter =
-        futures::executor::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
-            power_preference: wgpu::PowerPreference::default(),
-            force_fallback_adapter: false,
-            // Request an adapter which can render to our surface
-            compatible_surface: Some(&surface),
-        }))
-        .context("Failed to find an appropriate adapter")?;
-
-    // Create the logical device and command queue
-    let (device, queue) = futures::executor::block_on(adapter.request_device(
-        &wgpu::DeviceDescriptor {
-            label: None,
-            features: wgpu_features,
-            limits: wgpu_limits,
-        },
-        None,
-    ))
-    .context("Failed to create device")?;
-
-    Ok((
-        WgpuState {
-            instance,
-            adapter,
-            device,
-            queue,
-        },
-        surface,
-    ))
-}
-
-#[repr(C)]
-#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-struct Vertex {
-    position: [f32; 3],
-    color: [f32; 4],
-}
-impl Vertex {
-    fn new(position: Vec3, color: Vec4) -> Self {
-        Self {
-            position: position.to_array(),
-            color: color.to_array(),
-        }
-    }
-}
-
-struct PerspectiveCamera {
-    eye: Vec3,
-    target: Vec3,
-    up: Vec3,
-
-    aspect_ratio: f32,
-    fov_y_rad: f32,
-    z_near: f32,
-    z_far: f32,
-}
-impl PerspectiveCamera {
-    fn to_view_proj_matrix(&self) -> Mat4 {
-        let view = Mat4::look_at_rh(self.eye, self.target, self.up);
-        let proj = Mat4::perspective_rh(self.fov_y_rad, self.aspect_ratio, self.z_near, self.z_far);
-
-        proj * view
-    }
-}
-
 fn main() -> anyhow::Result<()> {
     let wgpu_features = wgpu::Features::MULTIVIEW;
     let wgpu_limits = wgpu::Limits::default();
@@ -335,4 +263,76 @@ fn main() -> anyhow::Result<()> {
             fps_timer = std::time::Instant::now();
         }
     });
+}
+
+fn create_wgpu_state(
+    window: &winit::window::Window,
+    wgpu_features: wgpu::Features,
+    wgpu_limits: wgpu::Limits,
+) -> anyhow::Result<(WgpuState, wgpu::Surface)> {
+    let instance = wgpu::Instance::new(wgpu::Backends::all());
+    let surface = unsafe { instance.create_surface(&window) };
+    let adapter =
+        futures::executor::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+            power_preference: wgpu::PowerPreference::default(),
+            force_fallback_adapter: false,
+            // Request an adapter which can render to our surface
+            compatible_surface: Some(&surface),
+        }))
+        .context("Failed to find an appropriate adapter")?;
+
+    // Create the logical device and command queue
+    let (device, queue) = futures::executor::block_on(adapter.request_device(
+        &wgpu::DeviceDescriptor {
+            label: None,
+            features: wgpu_features,
+            limits: wgpu_limits,
+        },
+        None,
+    ))
+    .context("Failed to create device")?;
+
+    Ok((
+        WgpuState {
+            instance,
+            adapter,
+            device,
+            queue,
+        },
+        surface,
+    ))
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+struct Vertex {
+    position: [f32; 3],
+    color: [f32; 4],
+}
+impl Vertex {
+    fn new(position: Vec3, color: Vec4) -> Self {
+        Self {
+            position: position.to_array(),
+            color: color.to_array(),
+        }
+    }
+}
+
+struct PerspectiveCamera {
+    eye: Vec3,
+    target: Vec3,
+    up: Vec3,
+
+    aspect_ratio: f32,
+    fov_y_rad: f32,
+    z_near: f32,
+    z_far: f32,
+}
+impl PerspectiveCamera {
+    fn to_view_proj_matrix(&self) -> Mat4 {
+        let view = Mat4::look_at_rh(self.eye, self.target, self.up);
+        let proj = Mat4::perspective_rh(self.fov_y_rad, self.aspect_ratio, self.z_near, self.z_far);
+
+        proj * view
+    }
 }
