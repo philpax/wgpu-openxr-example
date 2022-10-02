@@ -30,6 +30,21 @@ pub struct WgpuState {
 }
 
 fn main() -> anyhow::Result<()> {
+    use clap::{command, Parser};
+
+    #[derive(Parser, PartialEq)]
+    #[command(author, version, about)]
+    enum Args {
+        /// Only desktop
+        Desktop,
+        /// Desktop with XR initialization and resolution
+        DesktopWithXrResolution,
+        /// Render to headset
+        Xr,
+    }
+
+    let args = Args::parse();
+
     let wgpu_features = wgpu::Features::MULTIVIEW | wgpu::Features::PUSH_CONSTANTS;
     let wgpu_limits = wgpu::Limits {
         max_push_constant_size: 4,
@@ -40,8 +55,14 @@ fn main() -> anyhow::Result<()> {
     let window = winit::window::Window::new(&event_loop)?;
 
     #[cfg(feature = "xr")]
-    let (wgpu_state, surface, mut xr_state) = if std::env::args().any(|a| a == "--xr") {
+    let (wgpu_state, surface, mut xr_state) = if args != Args::Desktop {
         let (wgpu_state, xr_state) = xr::XrState::initialize_with_wgpu(wgpu_features, wgpu_limits)?;
+        window.set_resizable(false);
+        let view = xr_state.views()[0];
+        window.set_inner_size(winit::dpi::PhysicalSize::new(
+            view.recommended_image_rect_width,
+            view.recommended_image_rect_height,
+        ));
         let surface = unsafe { wgpu_state.instance.create_surface(&window) };
         (wgpu_state, surface, Some(xr_state))
     } else {
@@ -155,7 +176,11 @@ fn main() -> anyhow::Result<()> {
         }
 
         #[cfg(feature = "xr")]
-        let xr_frame_state = xr_state.as_mut().and_then(|x| x.pre_frame().unwrap());
+        let xr_frame_state = if args == Args::Xr {
+            xr_state.as_mut().and_then(|x| x.pre_frame().unwrap())
+        } else {
+            None
+        };
 
         let mut encoder = wgpu_state
             .device

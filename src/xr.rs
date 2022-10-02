@@ -2,9 +2,9 @@ use std::ffi::c_void;
 
 use anyhow::Context;
 use ash::vk::{self, Handle};
-use openxr as xr;
+use openxr::{self as xr, ViewConfigurationView};
 
-use crate::WgpuState;
+use crate::{types::VIEW_COUNT, WgpuState};
 
 pub const COLOR_FORMAT: vk::Format = vk::Format::R8G8B8A8_SRGB;
 const VIEW_TYPE: xr::ViewConfigurationType = xr::ViewConfigurationType::PRIMARY_STEREO;
@@ -23,6 +23,7 @@ pub struct XrState {
     left_space: xr::Space,
     stage: xr::Space,
     event_storage: xr::EventDataBuffer,
+    views: Vec<openxr::ViewConfigurationView>,
 }
 impl XrState {
     pub fn initialize_with_wgpu(
@@ -253,6 +254,13 @@ impl XrState {
             left_action.create_space(session.clone(), xr::Path::NULL, xr::Posef::IDENTITY)?;
         let stage =
             session.create_reference_space(xr::ReferenceSpaceType::STAGE, xr::Posef::IDENTITY)?;
+
+        let views = xr_instance
+            .enumerate_view_configuration_views(xr_system_id, VIEW_TYPE)
+            .unwrap();
+        assert_eq!(views.len(), VIEW_COUNT as usize);
+        assert_eq!(views[0], views[1]);
+
         Ok((
             WgpuState {
                 instance: wgpu_instance,
@@ -274,10 +282,10 @@ impl XrState {
                 left_space,
                 stage,
                 event_storage: xr::EventDataBuffer::new(),
+                views,
             },
         ))
     }
-
     pub fn pre_frame(&mut self) -> anyhow::Result<Option<xr::FrameState>> {
         while let Some(event) = self.xr_instance.poll_event(&mut self.event_storage)? {
             use xr::Event::*;
@@ -325,7 +333,6 @@ impl XrState {
 
         Ok(Some(xr_frame_state))
     }
-
     pub fn post_frame(&mut self, xr_frame_state: xr::FrameState) -> anyhow::Result<()> {
         if !xr_frame_state.should_render {
             self.frame_stream.end(
@@ -375,5 +382,8 @@ impl XrState {
             &[],
         )?;
         Ok(())
+    }
+    pub fn views(&self) -> &[ViewConfigurationView] {
+        self.views.as_ref()
     }
 }
