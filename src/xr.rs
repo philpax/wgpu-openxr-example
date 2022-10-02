@@ -7,7 +7,6 @@ use openxr as xr;
 use crate::WgpuState;
 
 pub const COLOR_FORMAT: vk::Format = vk::Format::R8G8B8A8_SRGB;
-pub const VIEW_COUNT: u32 = 2;
 const VIEW_TYPE: xr::ViewConfigurationType = xr::ViewConfigurationType::PRIMARY_STEREO;
 
 pub struct XrState {
