@@ -1,5 +1,5 @@
 use anyhow::Context;
-use glam::{vec3, vec4, Mat4, Vec3, Vec4};
+use glam::{vec3, vec4, Mat4, Quat, Vec3, Vec4};
 use std::borrow::Cow;
 use wgpu::util::DeviceExt;
 use winit::{
@@ -56,9 +56,9 @@ fn main() -> anyhow::Result<()> {
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("Vertex Buffer"),
                 contents: bytemuck::cast_slice(&[
-                    Vertex::new(vec3(-1.0, -1.0, 1.0), vec4(1.0, 0.0, 0.0, 1.0)),
-                    Vertex::new(vec3(0.0, 1.0, 1.0), vec4(0.0, 1.0, 0.0, 1.0)),
-                    Vertex::new(vec3(1.0, -1.0, 1.0), vec4(0.0, 0.0, 1.0, 1.0)),
+                    Vertex::new(vec3(-1.0, -1.0, 0.0), vec4(1.0, 0.0, 0.0, 1.0)),
+                    Vertex::new(vec3(0.0, 1.0, 0.0), vec4(0.0, 1.0, 0.0, 1.0)),
+                    Vertex::new(vec3(1.0, -1.0, 0.0), vec4(0.0, 0.0, 1.0, 1.0)),
                 ]),
                 usage: wgpu::BufferUsages::VERTEX,
             });
@@ -125,6 +125,31 @@ fn main() -> anyhow::Result<()> {
             }],
         });
 
+    let mut instances = [
+        (vec3(0.0, 0.0, 1.0), Quat::IDENTITY),
+        (vec3(1.0, 0.0, 2.0), Quat::IDENTITY),
+        (vec3(-1.0, 0.0, 2.0), Quat::IDENTITY),
+    ];
+    let instance_buffer = wgpu_state
+        .device
+        .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Index Buffer"),
+            contents: bytemuck::cast_slice(&instance_poses_to_data(&instances)),
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+        });
+    let instance_buffer_layout = wgpu::VertexBufferLayout {
+        array_stride: (std::mem::size_of::<f32>() * 4 * 4) as _,
+        step_mode: wgpu::VertexStepMode::Instance,
+        attributes: &(0..4)
+            .into_iter()
+            .map(|i| wgpu::VertexAttribute {
+                offset: (i * std::mem::size_of::<f32>() * 4) as _,
+                shader_location: 2 + i as u32,
+                format: wgpu::VertexFormat::Float32x4,
+            })
+            .collect::<Vec<_>>(),
+    };
+
     let swapchain_format = surface.get_supported_formats(&wgpu_state.adapter)[0];
     let pipeline_layout =
         wgpu_state
@@ -143,7 +168,7 @@ fn main() -> anyhow::Result<()> {
                 vertex: wgpu::VertexState {
                     module: &shader,
                     entry_point: "vs_main",
-                    buffers: &[vertex_buffer_layout],
+                    buffers: &[vertex_buffer_layout, instance_buffer_layout],
                 },
                 fragment: Some(wgpu::FragmentState {
                     module: &shader,
@@ -251,16 +276,26 @@ fn main() -> anyhow::Result<()> {
             });
             rpass.set_pipeline(&render_pipeline);
             rpass.set_vertex_buffer(0, triangle_vertex_buffer.slice(..));
+            rpass.set_vertex_buffer(1, instance_buffer.slice(..));
             rpass.set_bind_group(0, &camera_bind_group, &[]);
-            rpass.draw(0..3, 0..1);
+            rpass.draw(0..3, 0..(instances.len() as u32));
         }
 
-        camera.eye.z = start_time.elapsed().as_secs_f32().cos() - 1.0;
+        let time_since_start = start_time.elapsed().as_secs_f32();
+        camera.eye.z = time_since_start.cos() - 1.0;
         wgpu_state.queue.write_buffer(
             &camera_buffer,
             0,
             bytemuck::cast_slice(&camera.to_view_proj_matrix().to_cols_array()),
         );
+
+        instances[0].1 = Quat::from_rotation_y(time_since_start / std::f32::consts::PI);
+        wgpu_state.queue.write_buffer(
+            &instance_buffer,
+            0,
+            bytemuck::cast_slice(&instance_poses_to_data(&instances)),
+        );
+
         wgpu_state.queue.submit(Some(encoder.finish()));
         frame.present();
 
@@ -302,6 +337,21 @@ fn create_depth_texture(
     let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
     (texture, view)
 }
+
+fn instance_poses_to_data(poses: &[(Vec3, Quat)]) -> Vec<f32> {
+    poses
+        .into_iter()
+        .flat_map(|(t, r)| {
+            Mat4::from(glam::Affine3A::from_scale_rotation_translation(
+                Vec3::ONE,
+                *r,
+                *t,
+            ))
+            .to_cols_array()
+        })
+        .collect()
+}
+
 fn create_wgpu_state(
     window: &winit::window::Window,
     wgpu_features: wgpu::Features,
