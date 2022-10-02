@@ -1,6 +1,6 @@
 use anyhow::Context;
 use glam::{vec3, vec4, Mat4, Quat, Vec3, Vec4};
-use std::borrow::Cow;
+use std::{borrow::Cow, num::NonZeroU32};
 use wgpu::util::DeviceExt;
 use winit::{
     event::{Event, WindowEvent},
@@ -58,7 +58,7 @@ fn main() -> anyhow::Result<()> {
         .device
         .create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Camera buffer"),
-            contents: bytemuck::cast_slice(&camera.to_view_proj_matrix().to_cols_array()),
+            contents: bytemuck::cast_slice(&camera.to_view_proj_matrices()),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
     let camera_bind_group_layout =
@@ -182,7 +182,7 @@ fn main() -> anyhow::Result<()> {
                     bias: wgpu::DepthBiasState::default(),
                 }),
                 multisample: wgpu::MultisampleState::default(),
-                multiview: None,
+                multiview: NonZeroU32::new(2),
             });
 
     let mut config = wgpu::SurfaceConfiguration {
@@ -216,7 +216,7 @@ fn main() -> anyhow::Result<()> {
                         visibility: wgpu::ShaderStages::FRAGMENT,
                         ty: wgpu::BindingType::Texture {
                             multisampled: false,
-                            view_dimension: wgpu::TextureViewDimension::D2,
+                            view_dimension: wgpu::TextureViewDimension::D2Array,
                             sample_type: wgpu::TextureSampleType::Float { filterable: true },
                         },
                         count: None,
@@ -303,13 +303,13 @@ fn main() -> anyhow::Result<()> {
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("Blit Vertex Buffer"),
                 contents: bytemuck::cast_slice(&[
-                    BlitVertex::new(vec3(1.0, 1.0, 0.0), [1.0, 1.0]),
-                    BlitVertex::new(vec3(-1.0, 1.0, 0.0), [0.0, 1.0]),
-                    BlitVertex::new(vec3(-1.0, -1.0, 0.0), [0.0, 0.0]),
+                    BlitVertex::new(vec3(1.0, 1.0, 0.0), [1.0, 0.0]),
+                    BlitVertex::new(vec3(-1.0, 1.0, 0.0), [0.0, 0.0]),
+                    BlitVertex::new(vec3(-1.0, -1.0, 0.0), [0.0, 1.0]),
                     //
-                    BlitVertex::new(vec3(1.0, -1.0, 0.0), [1.0, 0.0]),
-                    BlitVertex::new(vec3(1.0, 1.0, 0.0), [1.0, 1.0]),
-                    BlitVertex::new(vec3(-1.0, -1.0, 0.0), [0.0, 0.0]),
+                    BlitVertex::new(vec3(1.0, -1.0, 0.0), [1.0, 1.0]),
+                    BlitVertex::new(vec3(1.0, 1.0, 0.0), [1.0, 0.0]),
+                    BlitVertex::new(vec3(-1.0, -1.0, 0.0), [0.0, 1.0]),
                 ]),
                 usage: wgpu::BufferUsages::VERTEX,
             });
@@ -439,7 +439,7 @@ fn main() -> anyhow::Result<()> {
         wgpu_state.queue.write_buffer(
             &camera_buffer,
             0,
-            bytemuck::cast_slice(&camera.to_view_proj_matrix().to_cols_array()),
+            bytemuck::cast_slice(&camera.to_view_proj_matrices()),
         );
 
         instances[0].1 = Quat::from_rotation_y(time_since_start / std::f32::consts::PI);
@@ -480,7 +480,7 @@ fn create_render_target_texture(
         size: wgpu::Extent3d {
             width: config.width,
             height: config.height,
-            depth_or_array_layers: 1,
+            depth_or_array_layers: 2,
         },
         mip_level_count: 1,
         sample_count: 1,
@@ -490,7 +490,11 @@ fn create_render_target_texture(
             | wgpu::TextureUsages::COPY_SRC
             | wgpu::TextureUsages::TEXTURE_BINDING,
     });
-    let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+    let view = texture.create_view(&wgpu::TextureViewDescriptor {
+        dimension: Some(wgpu::TextureViewDimension::D2Array),
+        array_layer_count: NonZeroU32::new(2),
+        ..Default::default()
+    });
     (texture, view)
 }
 
@@ -503,7 +507,7 @@ fn create_depth_texture(
         size: wgpu::Extent3d {
             width: config.width,
             height: config.height,
-            depth_or_array_layers: 1,
+            depth_or_array_layers: 2,
         },
         mip_level_count: 1,
         sample_count: 1,
@@ -511,7 +515,11 @@ fn create_depth_texture(
         format: DEPTH_FORMAT,
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
     });
-    let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+    let view = texture.create_view(&wgpu::TextureViewDescriptor {
+        dimension: Some(wgpu::TextureViewDimension::D2Array),
+        array_layer_count: NonZeroU32::new(2),
+        ..Default::default()
+    });
     (texture, view)
 }
 
@@ -608,10 +616,22 @@ struct PerspectiveCamera {
     z_far: f32,
 }
 impl PerspectiveCamera {
-    fn to_view_proj_matrix(&self) -> Mat4 {
+    fn to_view_proj_matrices(&self) -> Vec<f32> {
+        let ipd = 68.3 / 1_000.0;
+        let offset = vec4(ipd / 2.0, 0.0, 0.0, 0.0);
+
         let view = Mat4::look_at_rh(self.eye, self.target, self.up);
         let proj = Mat4::perspective_rh(self.fov_y_rad, self.aspect_ratio, self.z_near, self.z_far);
 
-        proj * view
+        let mut view_l = view;
+        view_l.w_axis += view * -offset;
+
+        let mut view_r = view;
+        view_r.w_axis += view * offset;
+        [
+            (proj * view_l).to_cols_array(),
+            (proj * view_r).to_cols_array(),
+        ]
+        .concat()
     }
 }

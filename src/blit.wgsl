@@ -9,7 +9,7 @@ struct BlitVertexOutput {
 }
 
 @group(0) @binding(0)
-var blit_texture: texture_2d<f32>;
+var blit_texture: texture_2d_array<f32>;
 @group(0)@binding(1)
 var blit_sampler: sampler;
 
@@ -23,5 +23,5 @@ fn blit_vs_main(model: BlitVertexInput) -> BlitVertexOutput {
 
 @fragment
 fn blit_fs_main(in: BlitVertexOutput) -> @location(0) vec4<f32> {
-    return textureSample(blit_texture, blit_sampler, in.uv_coords);
+    return textureSample(blit_texture, blit_sampler, in.uv_coords, select(0, 1, in.uv_coords.x < 0.5));
 }

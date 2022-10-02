@@ -1,5 +1,6 @@
 @group(0) @binding(0)
-var<uniform> view_projection_matrix: mat4x4<f32>;
+var<uniform> view_projection_matrix: array<mat4x4<f32>, 2>;
+
 
 struct VertexInput {
     @location(0) position: vec3<f32>,
@@ -21,6 +22,7 @@ struct VertexOutput {
 fn vs_main(
     model: VertexInput,
     instance: InstanceInput,
+    @builtin(view_index) view_index: i32,
 ) -> VertexOutput {
     let model_matrix = mat4x4<f32>(
         instance.model_matrix_0,
@@ -30,7 +32,7 @@ fn vs_main(
     );
 
     var out: VertexOutput;
-    out.position = view_projection_matrix * model_matrix * vec4<f32>(model.position, 1.0);
+    out.position = view_projection_matrix[view_index] * model_matrix * vec4<f32>(model.position, 1.0);
     out.color = model.color;
     return out;
 }
