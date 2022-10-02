@@ -1,5 +1,12 @@
 # wgpu-openxr-example
+
 An example of using wgpu 0.13 (Vulkan) with OpenXR.
+
+It should theoretically be possible to do the following:
+
+- D3D11/12 backend with OpenXR
+- WebGL2 backend with WebXR
+- Metal backend with ARKit
 
 Cobbled together from the following sources:
 
