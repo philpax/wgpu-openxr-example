@@ -2,7 +2,7 @@ use anyhow::Context;
 use glam::{vec3, vec4, Quat};
 use wgpu::util::DeviceExt;
 use winit::{
-    event::{Event, WindowEvent},
+    event::{ElementState, Event, KeyboardInput, VirtualKeyCode, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
 };
 
@@ -30,8 +30,11 @@ pub struct WgpuState {
 }
 
 fn main() -> anyhow::Result<()> {
-    let wgpu_features = wgpu::Features::MULTIVIEW;
-    let wgpu_limits = wgpu::Limits::default();
+    let wgpu_features = wgpu::Features::MULTIVIEW | wgpu::Features::PUSH_CONSTANTS;
+    let wgpu_limits = wgpu::Limits {
+        max_push_constant_size: 4,
+        ..Default::default()
+    };
 
     let event_loop = EventLoop::new();
     let window = winit::window::Window::new(&event_loop)?;
@@ -84,6 +87,7 @@ fn main() -> anyhow::Result<()> {
 
     let start_time = std::time::Instant::now();
     let (mut fps_timer, mut fps_count) = (std::time::Instant::now(), 0);
+    let mut view_index = 0;
     event_loop.run(move |event, _, control_flow| {
         // Have the closure take ownership of the resources.
         // `event_loop.run` never returns, therefore we must do this to ensure
@@ -120,14 +124,29 @@ fn main() -> anyhow::Result<()> {
                 // On macos the window needs to be redrawn manually after resizing
                 window.request_redraw();
             }
-            Event::MainEventsCleared => {
-                window.request_redraw();
-                cleared = true;
-            }
             Event::WindowEvent {
                 event: WindowEvent::CloseRequested,
                 ..
             } => *control_flow = ControlFlow::Exit,
+            Event::WindowEvent {
+                event:
+                    WindowEvent::KeyboardInput {
+                        input:
+                            KeyboardInput {
+                                virtual_keycode: Some(VirtualKeyCode::Right),
+                                state: ElementState::Released,
+                                ..
+                            },
+                        ..
+                    },
+                ..
+            } => {
+                view_index = (view_index + 1) % 2;
+            }
+            Event::MainEventsCleared => {
+                window.request_redraw();
+                cleared = true;
+            }
             _ => {}
         }
 
@@ -155,7 +174,7 @@ fn main() -> anyhow::Result<()> {
         let view = frame
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
-        blit_state.encode_draw_pass(&mut encoder, &view);
+        blit_state.encode_draw_pass(&mut encoder, &view, view_index);
 
         let time_since_start = start_time.elapsed().as_secs_f32();
         camera_state.data.eye.z = time_since_start.cos() - 1.0;
