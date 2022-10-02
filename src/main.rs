@@ -154,7 +154,7 @@ fn main() -> anyhow::Result<()> {
                     WindowEvent::KeyboardInput {
                         input:
                             KeyboardInput {
-                                virtual_keycode: Some(VirtualKeyCode::Right),
+                                virtual_keycode: Some(VirtualKeyCode::Left | VirtualKeyCode::Right),
                                 state: ElementState::Released,
                                 ..
                             },
@@ -221,10 +221,11 @@ fn main() -> anyhow::Result<()> {
         }
 
         fps_count += 1;
-        if fps_timer.elapsed().as_millis() > 1_000 {
+        if fps_timer.elapsed().as_millis() > 100 {
             window.set_title(&format!(
-                "wgpu-openxr-example: {:.02} FPS",
-                (fps_count as f32) / fps_timer.elapsed().as_secs_f32()
+                "wgpu-openxr-example: {:.02} FPS | {} view",
+                (fps_count as f32) / fps_timer.elapsed().as_secs_f32(),
+                if view_index == 0 { "left" } else { "right" }
             ));
 
             fps_count = 0;
