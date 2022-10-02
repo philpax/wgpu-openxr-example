@@ -133,32 +133,13 @@ fn main() -> anyhow::Result<()> {
         let mut encoder = wgpu_state
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-        {
-            let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: None,
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &rt_texture.view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                        store: true,
-                    },
-                })],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &depth_texture.view,
-                    depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(1.0),
-                        store: true,
-                    }),
-                    stencil_ops: None,
-                }),
-            });
-            rpass.set_pipeline(&main_state.pipeline);
-            rpass.set_vertex_buffer(0, triangle_vertex_buffer.slice(..));
-            rpass.set_vertex_buffer(1, main_state.instance_buffer.slice(..));
-            rpass.set_bind_group(0, &camera_state.bind_group, &[]);
-            rpass.draw(0..3, 0..(main_state.instances.len() as u32));
-        }
+        main_state.encode_draw_pass(
+            &mut encoder,
+            &rt_texture.view,
+            &depth_texture.view,
+            &triangle_vertex_buffer,
+            &camera_state.bind_group,
+        );
 
         let frame = surface
             .get_current_texture()
@@ -166,24 +147,7 @@ fn main() -> anyhow::Result<()> {
         let view = frame
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
-        {
-            let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: None,
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                        store: true,
-                    },
-                })],
-                depth_stencil_attachment: None,
-            });
-            rpass.set_pipeline(&blit_state.render_pipeline);
-            rpass.set_bind_group(0, &blit_state.bind_group, &[]);
-            rpass.set_vertex_buffer(0, blit_state.vertex_buffer.slice(..));
-            rpass.draw(0..6, 0..1);
-        }
+        blit_state.encode_draw_pass(&mut encoder, &view);
 
         let time_since_start = start_time.elapsed().as_secs_f32();
         camera_state.data.eye.z = time_since_start.cos() - 1.0;
@@ -194,11 +158,7 @@ fn main() -> anyhow::Result<()> {
         );
 
         main_state.instances[0].1 = Quat::from_rotation_y(time_since_start / std::f32::consts::PI);
-        wgpu_state.queue.write_buffer(
-            &main_state.instance_buffer,
-            0,
-            bytemuck::cast_slice(&instance_poses_to_data(&main_state.instances)),
-        );
+        main_state.upload_instances(&wgpu_state.queue);
 
         wgpu_state.queue.submit(Some(encoder.finish()));
         frame.present();
@@ -243,7 +203,7 @@ impl MainState {
         ];
         let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Index Buffer"),
-            contents: bytemuck::cast_slice(&instance_poses_to_data(&instances)),
+            contents: bytemuck::cast_slice(&Self::instances_to_data(&instances)),
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
         });
         let instance_buffer_layout = wgpu::VertexBufferLayout {
@@ -317,6 +277,59 @@ impl MainState {
             instance_buffer,
         }
     }
+    fn upload_instances(&self, queue: &wgpu::Queue) {
+        queue.write_buffer(
+            &self.instance_buffer,
+            0,
+            bytemuck::cast_slice(&Self::instances_to_data(&self.instances)),
+        );
+    }
+    fn instances_to_data(poses: &[(Vec3, Quat)]) -> Vec<f32> {
+        poses
+            .into_iter()
+            .flat_map(|(t, r)| {
+                Mat4::from(glam::Affine3A::from_scale_rotation_translation(
+                    Vec3::ONE,
+                    *r,
+                    *t,
+                ))
+                .to_cols_array()
+            })
+            .collect()
+    }
+    fn encode_draw_pass(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        rt_view: &wgpu::TextureView,
+        depth_view: &wgpu::TextureView,
+        vertex_buffer: &wgpu::Buffer,
+        camera_bind_group: &wgpu::BindGroup,
+    ) {
+        let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: None,
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: &rt_view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                    store: true,
+                },
+            })],
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view: &depth_view,
+                depth_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(1.0),
+                    store: true,
+                }),
+                stencil_ops: None,
+            }),
+        });
+        rpass.set_pipeline(&self.pipeline);
+        rpass.set_vertex_buffer(0, vertex_buffer.slice(..));
+        rpass.set_vertex_buffer(1, self.instance_buffer.slice(..));
+        rpass.set_bind_group(0, &camera_bind_group, &[]);
+        rpass.draw(0..3, 0..(self.instances.len() as u32));
+    }
 }
 
 struct CameraState {
@@ -324,6 +337,7 @@ struct CameraState {
 
     buffer: wgpu::Buffer,
     bind_group_layout: wgpu::BindGroupLayout,
+    #[allow(dead_code)]
     bind_group: wgpu::BindGroup,
 }
 impl CameraState {
@@ -371,7 +385,6 @@ impl CameraState {
             bind_group,
         }
     }
-
     fn resize(&mut self, inner_size: winit::dpi::PhysicalSize<u32>) {
         self.data.aspect_ratio = inner_size.width as f32 / inner_size.height as f32;
     }
@@ -381,7 +394,9 @@ struct BlitState {
     sampler: wgpu::Sampler,
     bind_group_layout: wgpu::BindGroupLayout,
     bind_group: wgpu::BindGroup,
+    #[allow(dead_code)]
     render_pipeline: wgpu::RenderPipeline,
+    #[allow(dead_code)]
     vertex_buffer: wgpu::Buffer,
 }
 impl BlitState {
@@ -534,6 +549,28 @@ impl BlitState {
             label: Some("blit_bind_group"),
         })
     }
+    fn encode_draw_pass(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        output_view: &wgpu::TextureView,
+    ) {
+        let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: None,
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: output_view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                    store: true,
+                },
+            })],
+            depth_stencil_attachment: None,
+        });
+        rpass.set_pipeline(&self.render_pipeline);
+        rpass.set_bind_group(0, &self.bind_group, &[]);
+        rpass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+        rpass.draw(0..6, 0..1);
+    }
 }
 
 struct Texture {
@@ -590,20 +627,6 @@ impl Texture {
         });
         Self { texture, view }
     }
-}
-
-fn instance_poses_to_data(poses: &[(Vec3, Quat)]) -> Vec<f32> {
-    poses
-        .into_iter()
-        .flat_map(|(t, r)| {
-            Mat4::from(glam::Affine3A::from_scale_rotation_translation(
-                Vec3::ONE,
-                *r,
-                *t,
-            ))
-            .to_cols_array()
-        })
-        .collect()
 }
 
 fn create_wgpu_state(
