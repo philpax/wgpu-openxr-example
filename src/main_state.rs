@@ -67,7 +67,7 @@ impl MainState {
         };
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: None,
-            bind_group_layouts: &[&camera_state.bind_group_layout()],
+            bind_group_layouts: &[(camera_state.bind_group_layout())],
             push_constant_ranges: &[],
         });
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -112,7 +112,7 @@ impl MainState {
     }
     fn instances_to_data(poses: &[(Vec3, Quat)]) -> Vec<f32> {
         poses
-            .into_iter()
+            .iter()
             .flat_map(|(t, r)| {
                 Mat4::from(glam::Affine3A::from_scale_rotation_translation(
                     Vec3::ONE,
@@ -134,7 +134,7 @@ impl MainState {
         let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: None,
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &rt_view,
+                view: rt_view,
                 resolve_target: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
@@ -142,7 +142,7 @@ impl MainState {
                 },
             })],
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                view: &depth_view,
+                view: depth_view,
                 depth_ops: Some(wgpu::Operations {
                     load: wgpu::LoadOp::Clear(1.0),
                     store: true,
@@ -153,7 +153,7 @@ impl MainState {
         rpass.set_pipeline(&self.pipeline);
         rpass.set_vertex_buffer(0, vertex_buffer.slice(..));
         rpass.set_vertex_buffer(1, self.instance_buffer.slice(..));
-        rpass.set_bind_group(0, &camera_bind_group, &[]);
+        rpass.set_bind_group(0, camera_bind_group, &[]);
         rpass.draw(0..3, 0..(self.instances.len() as u32));
     }
 }

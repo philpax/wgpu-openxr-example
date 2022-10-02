@@ -210,7 +210,7 @@ impl XrState {
                 &wgpu::DeviceDescriptor {
                     label: None,
                     features: wgpu_features,
-                    limits: wgpu_limits.clone(),
+                    limits: wgpu_limits,
                 },
                 None,
             )
@@ -223,7 +223,7 @@ impl XrState {
                     instance: vk_instance_ptr,
                     physical_device: vk_physical_device_ptr,
                     device: vk_device_ptr,
-                    queue_family_index: queue_family_index,
+                    queue_family_index,
                     queue_index: 0,
                 },
             )

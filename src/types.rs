@@ -1,4 +1,4 @@
-use glam::{vec4, Mat4, Vec3, Vec4};
+use glam::{Vec3, Vec4};
 
 pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 pub const VIEW_COUNT: u32 = 2;

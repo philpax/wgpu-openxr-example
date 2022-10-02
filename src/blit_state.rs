@@ -151,7 +151,7 @@ impl BlitState {
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&render_target_view),
+                    resource: wgpu::BindingResource::TextureView(render_target_view),
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,

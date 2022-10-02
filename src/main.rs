@@ -67,7 +67,7 @@ fn main() -> anyhow::Result<()> {
     surface.configure(&wgpu_state.device, &config);
     let mut depth_texture = Texture::new_depth_texture(&wgpu_state.device, &config);
     let mut rt_texture = Texture::new_rt_texture(&wgpu_state.device, &config, swapchain_format);
-    let mut blit_state = BlitState::new(&wgpu_state.device, &rt_texture.view(), swapchain_format);
+    let mut blit_state = BlitState::new(&wgpu_state.device, rt_texture.view(), swapchain_format);
 
     let triangle_vertex_buffer =
         wgpu_state
@@ -114,7 +114,7 @@ fn main() -> anyhow::Result<()> {
                 depth_texture = Texture::new_depth_texture(&wgpu_state.device, &config);
                 rt_texture = Texture::new_rt_texture(&wgpu_state.device, &config, swapchain_format);
 
-                blit_state.resize(&wgpu_state.device, &rt_texture.view());
+                blit_state.resize(&wgpu_state.device, rt_texture.view());
                 camera_state.data.resize(size);
 
                 // On macos the window needs to be redrawn manually after resizing
@@ -143,10 +143,10 @@ fn main() -> anyhow::Result<()> {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
         main_state.encode_draw_pass(
             &mut encoder,
-            &rt_texture.view(),
-            &depth_texture.view(),
+            rt_texture.view(),
+            depth_texture.view(),
             &triangle_vertex_buffer,
-            &camera_state.bind_group(),
+            camera_state.bind_group(),
         );
 
         let frame = surface
@@ -160,7 +160,7 @@ fn main() -> anyhow::Result<()> {
         let time_since_start = start_time.elapsed().as_secs_f32();
         camera_state.data.eye.z = time_since_start.cos() - 1.0;
         wgpu_state.queue.write_buffer(
-            &camera_state.buffer(),
+            camera_state.buffer(),
             0,
             bytemuck::cast_slice(&camera_state.data.to_view_proj_matrices()),
         );
