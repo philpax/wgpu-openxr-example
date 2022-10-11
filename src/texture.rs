@@ -3,12 +3,15 @@ use std::num::NonZeroU32;
 use crate::types::{DEPTH_FORMAT, VIEW_COUNT};
 
 pub struct Texture {
-    #[allow(dead_code)]
     texture: wgpu::Texture,
     view: wgpu::TextureView,
 }
 
 impl Texture {
+    pub fn from_wgpu(texture: wgpu::Texture, view: wgpu::TextureView) -> Self {
+        Self { texture, view }
+    }
+
     pub fn new_rt_texture(
         device: &wgpu::Device,
         config: &wgpu::SurfaceConfiguration,
@@ -59,5 +62,8 @@ impl Texture {
     }
     pub fn view(&self) -> &wgpu::TextureView {
         &self.view
+    }
+    pub fn texture(&self) -> &wgpu::Texture {
+        &self.texture
     }
 }

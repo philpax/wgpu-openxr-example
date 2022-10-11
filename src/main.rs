@@ -212,13 +212,32 @@ fn main() -> anyhow::Result<()> {
         main_state.instances[0].1 = Quat::from_rotation_y(time_since_start / std::f32::consts::PI);
         main_state.upload_instances(&wgpu_state.queue);
 
+        #[cfg(feature = "xr")]
+        // todo: upload views just before submitting the queue
+        let views = if let Some((xr_state, xr_frame_state)) = xr_state.as_mut().zip(xr_frame_state)
+        {
+            xr_state
+                .post_frame(
+                    &wgpu_state.device,
+                    xr_frame_state,
+                    &mut encoder,
+                    &rt_texture,
+                )
+                .unwrap()
+        } else {
+            vec![]
+        };
+
         wgpu_state.queue.submit(Some(encoder.finish()));
-        frame.present();
 
         #[cfg(feature = "xr")]
         if let Some((xr_state, xr_frame_state)) = xr_state.as_mut().zip(xr_frame_state) {
-            xr_state.post_frame(xr_frame_state).unwrap();
+            xr_state
+                .post_queue_submit(&wgpu_state.device, xr_frame_state, &views)
+                .unwrap();
         }
+
+        frame.present();
 
         fps_count += 1;
         if fps_timer.elapsed().as_millis() > 100 {

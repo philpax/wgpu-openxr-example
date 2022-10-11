@@ -1,16 +1,19 @@
-use std::ffi::c_void;
+use std::{ffi::c_void, num::NonZeroU32};
 
 use anyhow::Context;
 use ash::vk::{self, Handle};
 use openxr::{self as xr, ViewConfigurationView};
 
-use crate::{types::VIEW_COUNT, WgpuState};
+use crate::{texture::Texture, types::VIEW_COUNT, WgpuState};
 
-pub const COLOR_FORMAT: vk::Format = vk::Format::R8G8B8A8_SRGB;
+pub const WGPU_COLOR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
+pub const VK_COLOR_FORMAT: vk::Format = vk::Format::R8G8B8A8_SRGB;
+
 const VIEW_TYPE: xr::ViewConfigurationType = xr::ViewConfigurationType::PRIMARY_STEREO;
 
 pub struct XrState {
     xr_instance: xr::Instance,
+    xr_system_id: openxr::SystemId,
     environment_blend_mode: xr::EnvironmentBlendMode,
     session: xr::Session<xr::Vulkan>,
     session_running: bool,
@@ -24,6 +27,7 @@ pub struct XrState {
     stage: xr::Space,
     event_storage: xr::EventDataBuffer,
     views: Vec<openxr::ViewConfigurationView>,
+    swapchain: Option<Swapchain>,
 }
 impl XrState {
     pub fn initialize_with_wgpu(
@@ -270,6 +274,7 @@ impl XrState {
             },
             XrState {
                 xr_instance,
+                xr_system_id,
                 environment_blend_mode,
                 session,
                 session_running: false,
@@ -283,6 +288,7 @@ impl XrState {
                 stage,
                 event_storage: xr::EventDataBuffer::new(),
                 views,
+                swapchain: None,
             },
         ))
     }
@@ -333,15 +339,115 @@ impl XrState {
 
         Ok(Some(xr_frame_state))
     }
-    pub fn post_frame(&mut self, xr_frame_state: xr::FrameState) -> anyhow::Result<()> {
+    pub fn post_frame(
+        &mut self,
+        device: &wgpu::Device,
+        xr_frame_state: xr::FrameState,
+        encoder: &mut wgpu::CommandEncoder,
+        rt_texture: &Texture,
+    ) -> anyhow::Result<Vec<openxr::View>> {
+        use wgpu_hal::{api::Vulkan as V, Api};
         if !xr_frame_state.should_render {
             self.frame_stream.end(
                 xr_frame_state.predicted_display_time,
                 self.environment_blend_mode,
                 &[],
             )?;
-            return Ok(());
+            return Ok(vec![]);
         }
+
+        let swapchain = self.swapchain.get_or_insert_with(|| {
+            // Now we need to find all the viewpoints we need to take care of! This is a
+            // property of the view configuration type; in this example we use PRIMARY_STEREO,
+            // so we should have 2 viewpoints.
+
+            // Create a swapchain for the viewpoints! A swapchain is a set of texture buffers
+            // used for displaying to screen, typically this is a backbuffer and a front buffer,
+            // one for rendering data to, and one for displaying on-screen.
+            let resolution = vk::Extent2D {
+                width: self.views[0].recommended_image_rect_width,
+                height: self.views[0].recommended_image_rect_height,
+            };
+            let handle = self
+                .session
+                .create_swapchain(&xr::SwapchainCreateInfo {
+                    create_flags: xr::SwapchainCreateFlags::EMPTY,
+                    usage_flags: xr::SwapchainUsageFlags::COLOR_ATTACHMENT
+                        | xr::SwapchainUsageFlags::SAMPLED,
+                    format: VK_COLOR_FORMAT.as_raw() as _,
+                    // The Vulkan graphics pipeline we create is not set up for multisampling,
+                    // so we hardcode this to 1. If we used a proper multisampling setup, we
+                    // could set this to `views[0].recommended_swapchain_sample_count`.
+                    sample_count: 1,
+                    width: resolution.width,
+                    height: resolution.height,
+                    face_count: 1,
+                    array_size: VIEW_COUNT,
+                    mip_count: 1,
+                })
+                .unwrap();
+
+            // We'll want to track our own information about the swapchain, so we can draw stuff
+            // onto it! We'll also create a buffer for each generated texture here as well.
+            let images = handle.enumerate_images().unwrap();
+            Swapchain {
+                handle,
+                resolution,
+                buffers: images
+                    .into_iter()
+                    .map(|color_image| {
+                        let color_image = vk::Image::from_raw(color_image);
+                        let wgpu_hal_texture = unsafe {
+                            <V as Api>::Device::texture_from_raw(
+                                color_image,
+                                &wgpu_hal::TextureDescriptor {
+                                    label: Some("VR Swapchain"),
+                                    size: wgpu::Extent3d {
+                                        width: resolution.width,
+                                        height: resolution.height,
+                                        depth_or_array_layers: 2,
+                                    },
+                                    mip_level_count: 1,
+                                    sample_count: 1,
+                                    dimension: wgpu::TextureDimension::D2,
+                                    format: WGPU_COLOR_FORMAT,
+                                    usage: wgpu_hal::TextureUses::COLOR_TARGET
+                                        | wgpu_hal::TextureUses::COPY_DST,
+                                    memory_flags: wgpu_hal::MemoryFlags::empty(),
+                                },
+                                None,
+                            )
+                        };
+                        let texture = unsafe {
+                            device.create_texture_from_hal::<V>(
+                                wgpu_hal_texture,
+                                &wgpu::TextureDescriptor {
+                                    label: Some("VR Swapchain"),
+                                    size: wgpu::Extent3d {
+                                        width: resolution.width,
+                                        height: resolution.height,
+                                        depth_or_array_layers: 2,
+                                    },
+                                    mip_level_count: 1,
+                                    sample_count: 1,
+                                    dimension: wgpu::TextureDimension::D2,
+                                    format: WGPU_COLOR_FORMAT,
+                                    usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                                        | wgpu::TextureUsages::COPY_DST,
+                                },
+                            )
+                        };
+                        let view = texture.create_view(&wgpu::TextureViewDescriptor {
+                            dimension: Some(wgpu::TextureViewDimension::D2Array),
+                            array_layer_count: NonZeroU32::new(VIEW_COUNT),
+                            ..Default::default()
+                        });
+                        Texture::from_wgpu(texture, view)
+                    })
+                    .collect(),
+            }
+        });
+
         self.session.sync_actions(&[(&self.action_set).into()])?;
         let right_location = self
             .right_space
@@ -371,19 +477,110 @@ impl XrState {
         if printed {
             println!();
         }
-        let (_, _views) = self.session.locate_views(
+        let (_, views) = self.session.locate_views(
             VIEW_TYPE,
             xr_frame_state.predicted_display_time,
             &self.stage,
         )?;
-        self.frame_stream.end(
-            xr_frame_state.predicted_display_time,
-            self.environment_blend_mode,
-            &[],
-        )?;
+
+        // We need to ask which swapchain image to use for rendering! Which one will we get?
+        // Who knows! It's up to the runtime to decide.
+        let image_index = swapchain.handle.acquire_image().unwrap();
+
+        // Wait until the image is available to render to. The compositor could still be
+        // reading from it.
+        swapchain.handle.wait_image(xr::Duration::INFINITE).unwrap();
+
+        // encoder.copy_texture_to_texture(
+        //     wgpu::ImageCopyTexture {
+        //         texture: rt_texture.texture(),
+        //         mip_level: 0,
+        //         origin: wgpu::Origin3d::ZERO,
+        //         aspect: wgpu::TextureAspect::All,
+        //     },
+        //     wgpu::ImageCopyTexture {
+        //         texture: swapchain.buffers[image_index as usize].texture(),
+        //         mip_level: 0,
+        //         origin: wgpu::Origin3d::ZERO,
+        //         aspect: wgpu::TextureAspect::All,
+        //     },
+        //     wgpu::Extent3d {
+        //         width: self.views[0].recommended_image_rect_width,
+        //         height: self.views[0].recommended_image_rect_height,
+        //         depth_or_array_layers: 2,
+        //     },
+        // );
+        {
+            let mut _rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: None,
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: swapchain.buffers[image_index as usize].view(),
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::WHITE),
+                        store: true,
+                    },
+                })],
+                depth_stencil_attachment: None,
+            });
+        }
+
+        Ok(views)
+    }
+    pub fn post_queue_submit(
+        &mut self,
+        device: &wgpu::Device,
+        xr_frame_state: xr::FrameState,
+        views: &[openxr::View],
+    ) -> anyhow::Result<()> {
+        if let Some(swapchain) = &mut self.swapchain {
+            swapchain.handle.release_image().unwrap();
+
+            let rect = xr::Rect2Di {
+                offset: xr::Offset2Di { x: 0, y: 0 },
+                extent: xr::Extent2Di {
+                    width: swapchain.resolution.width as _,
+                    height: swapchain.resolution.height as _,
+                },
+            };
+
+            self.frame_stream.end(
+                xr_frame_state.predicted_display_time,
+                self.environment_blend_mode,
+                &[&xr::CompositionLayerProjection::new()
+                    .space(&self.stage)
+                    .views(&[
+                        xr::CompositionLayerProjectionView::new()
+                            .pose(views[0].pose)
+                            .fov(views[0].fov)
+                            .sub_image(
+                                xr::SwapchainSubImage::new()
+                                    .swapchain(&swapchain.handle)
+                                    .image_array_index(0)
+                                    .image_rect(rect),
+                            ),
+                        xr::CompositionLayerProjectionView::new()
+                            .pose(views[1].pose)
+                            .fov(views[1].fov)
+                            .sub_image(
+                                xr::SwapchainSubImage::new()
+                                    .swapchain(&swapchain.handle)
+                                    .image_array_index(1)
+                                    .image_rect(rect),
+                            ),
+                    ])],
+            )?;
+        }
+
         Ok(())
     }
     pub fn views(&self) -> &[ViewConfigurationView] {
         self.views.as_ref()
     }
+}
+
+struct Swapchain {
+    handle: xr::Swapchain<xr::Vulkan>,
+    resolution: vk::Extent2D,
+    buffers: Vec<Texture>,
 }
