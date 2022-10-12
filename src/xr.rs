@@ -13,7 +13,6 @@ const VIEW_TYPE: xr::ViewConfigurationType = xr::ViewConfigurationType::PRIMARY_
 
 pub struct XrState {
     xr_instance: xr::Instance,
-    xr_system_id: openxr::SystemId,
     environment_blend_mode: xr::EnvironmentBlendMode,
     session: xr::Session<xr::Vulkan>,
     session_running: bool,
@@ -274,7 +273,6 @@ impl XrState {
             },
             XrState {
                 xr_instance,
-                xr_system_id,
                 environment_blend_mode,
                 session,
                 session_running: false,
@@ -344,7 +342,7 @@ impl XrState {
         device: &wgpu::Device,
         xr_frame_state: xr::FrameState,
         encoder: &mut wgpu::CommandEncoder,
-        rt_texture: &Texture,
+        blit_state: &crate::BlitState,
     ) -> anyhow::Result<Vec<openxr::View>> {
         use wgpu_hal::{api::Vulkan as V, Api};
         if !xr_frame_state.should_render {
@@ -491,45 +489,16 @@ impl XrState {
         // reading from it.
         swapchain.handle.wait_image(xr::Duration::INFINITE).unwrap();
 
-        // encoder.copy_texture_to_texture(
-        //     wgpu::ImageCopyTexture {
-        //         texture: rt_texture.texture(),
-        //         mip_level: 0,
-        //         origin: wgpu::Origin3d::ZERO,
-        //         aspect: wgpu::TextureAspect::All,
-        //     },
-        //     wgpu::ImageCopyTexture {
-        //         texture: swapchain.buffers[image_index as usize].texture(),
-        //         mip_level: 0,
-        //         origin: wgpu::Origin3d::ZERO,
-        //         aspect: wgpu::TextureAspect::All,
-        //     },
-        //     wgpu::Extent3d {
-        //         width: self.views[0].recommended_image_rect_width,
-        //         height: self.views[0].recommended_image_rect_height,
-        //         depth_or_array_layers: 2,
-        //     },
-        // );
-        {
-            let mut _rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: None,
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: swapchain.buffers[image_index as usize].view(),
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::WHITE),
-                        store: true,
-                    },
-                })],
-                depth_stencil_attachment: None,
-            });
-        }
+        blit_state.encode_draw_pass(
+            encoder,
+            swapchain.buffers[image_index as usize].view(),
+            None,
+        );
 
         Ok(views)
     }
     pub fn post_queue_submit(
         &mut self,
-        device: &wgpu::Device,
         xr_frame_state: xr::FrameState,
         views: &[openxr::View],
     ) -> anyhow::Result<()> {

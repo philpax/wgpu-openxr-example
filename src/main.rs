@@ -81,19 +81,19 @@ fn main() -> anyhow::Result<()> {
 
     let preprocessor = wgsl::Preprocessor::from_directory(Path::new("shaders"))?;
 
-    let swapchain_format = surface.get_supported_formats(&wgpu_state.adapter)[0];
+    let window_swapchain_format = surface.get_supported_formats(&wgpu_state.adapter)[0];
     let mut main_state = MainState::new(
         &wgpu_state.device,
         &preprocessor,
         &camera_state,
-        swapchain_format,
+        window_swapchain_format,
     );
 
     let mut config = {
         let size = window.inner_size();
         wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            format: swapchain_format,
+            format: window_swapchain_format,
             width: size.width,
             height: size.height,
             present_mode: wgpu::PresentMode::Immediate,
@@ -101,12 +101,14 @@ fn main() -> anyhow::Result<()> {
     };
     surface.configure(&wgpu_state.device, &config);
     let mut depth_texture = Texture::new_depth_texture(&wgpu_state.device, &config);
-    let mut rt_texture = Texture::new_rt_texture(&wgpu_state.device, &config, swapchain_format);
+    let mut rt_texture =
+        Texture::new_rt_texture(&wgpu_state.device, &config, window_swapchain_format);
     let mut blit_state = BlitState::new(
         &wgpu_state.device,
         &preprocessor,
         rt_texture.view(),
-        swapchain_format,
+        window_swapchain_format,
+        xr::WGPU_COLOR_FORMAT,
     );
 
     let triangle_vertex_buffer =
@@ -153,7 +155,8 @@ fn main() -> anyhow::Result<()> {
                 config.height = size.height;
                 surface.configure(&wgpu_state.device, &config);
                 depth_texture = Texture::new_depth_texture(&wgpu_state.device, &config);
-                rt_texture = Texture::new_rt_texture(&wgpu_state.device, &config, swapchain_format);
+                rt_texture =
+                    Texture::new_rt_texture(&wgpu_state.device, &config, window_swapchain_format);
 
                 blit_state.resize(&wgpu_state.device, rt_texture.view());
                 camera_state.data.resize(size);
@@ -215,7 +218,7 @@ fn main() -> anyhow::Result<()> {
         let view = frame
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
-        blit_state.encode_draw_pass(&mut encoder, &view, view_index);
+        blit_state.encode_draw_pass(&mut encoder, &view, Some(view_index));
 
         let time_since_start = start_time.elapsed().as_secs_f32();
         camera_state.data.eye.z = time_since_start.cos() - 1.0;
@@ -237,7 +240,7 @@ fn main() -> anyhow::Result<()> {
                     &wgpu_state.device,
                     xr_frame_state,
                     &mut encoder,
-                    &rt_texture,
+                    &blit_state,
                 )
                 .unwrap()
         } else {
@@ -248,9 +251,7 @@ fn main() -> anyhow::Result<()> {
 
         #[cfg(feature = "xr")]
         if let Some((xr_state, xr_frame_state)) = xr_state.as_mut().zip(xr_frame_state) {
-            xr_state
-                .post_queue_submit(&wgpu_state.device, xr_frame_state, &views)
-                .unwrap();
+            xr_state.post_queue_submit(xr_frame_state, &views).unwrap();
         }
 
         frame.present();

@@ -1,5 +1,5 @@
 use glam::{vec3, Mat4, Quat, Vec3};
-use std::{borrow::Cow, num::NonZeroU32, path::Path};
+use std::{borrow::Cow, num::NonZeroU32};
 use wgpu::util::DeviceExt;
 
 use crate::{

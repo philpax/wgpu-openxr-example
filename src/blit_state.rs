@@ -1,13 +1,13 @@
 use glam::{vec3, Vec3};
-use std::{borrow::Cow, path::Path};
+use std::borrow::Cow;
 use wgpu::util::DeviceExt;
 
 pub struct BlitState {
     sampler: wgpu::Sampler,
     bind_group_layout: wgpu::BindGroupLayout,
     bind_group: wgpu::BindGroup,
-    #[allow(dead_code)]
-    render_pipeline: wgpu::RenderPipeline,
+    render_pipeline_window: wgpu::RenderPipeline,
+    render_pipeline_headset: wgpu::RenderPipeline,
     #[allow(dead_code)]
     vertex_buffer: wgpu::Buffer,
 }
@@ -16,7 +16,8 @@ impl BlitState {
         device: &wgpu::Device,
         preprocessor: &crate::wgsl::Preprocessor,
         render_target_view: &wgpu::TextureView,
-        swapchain_format: wgpu::TextureFormat,
+        window_swapchain_format: wgpu::TextureFormat,
+        headset_swapchain_format: wgpu::TextureFormat,
     ) -> Self {
         #[repr(C)]
         #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
@@ -91,29 +92,36 @@ impl BlitState {
                 },
             ],
         };
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: None,
-            source: wgpu::ShaderSource::Wgsl(Cow::Owned(
-                preprocessor.preprocess("blit.wgsl").unwrap(),
-            )),
-        });
-        let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: None,
-            layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: "blit_vs_main",
-                buffers: &[vertex_buffer_layout],
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: "blit_fs_main",
-                targets: &[Some(swapchain_format.into())],
-            }),
-            primitive: wgpu::PrimitiveState::default(),
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            multiview: None,
+
+        let [render_pipeline_window, render_pipeline_headset] = [
+            ("blit_window.wgsl", window_swapchain_format, None),
+            ("blit_headset.wgsl", headset_swapchain_format, Some(2)),
+        ]
+        .map(|(filename, swapchain_format, multiview)| {
+            let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: None,
+                source: wgpu::ShaderSource::Wgsl(Cow::Owned(
+                    preprocessor.preprocess(filename).unwrap(),
+                )),
+            });
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: None,
+                layout: Some(&pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &shader,
+                    entry_point: "blit_vs_main",
+                    buffers: &[vertex_buffer_layout.clone()],
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &shader,
+                    entry_point: "blit_fs_main",
+                    targets: &[Some(swapchain_format.into())],
+                }),
+                primitive: wgpu::PrimitiveState::default(),
+                depth_stencil: None,
+                multisample: wgpu::MultisampleState::default(),
+                multiview: multiview.map(|i| i.try_into().unwrap()),
+            })
         });
 
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -134,7 +142,8 @@ impl BlitState {
             sampler,
             bind_group_layout,
             bind_group,
-            render_pipeline,
+            render_pipeline_window,
+            render_pipeline_headset,
             vertex_buffer,
         }
     }
@@ -171,7 +180,8 @@ impl BlitState {
         &self,
         encoder: &mut wgpu::CommandEncoder,
         output_view: &wgpu::TextureView,
-        view_index: u32,
+        // if none, assumed to be blitting to the headset
+        view_index: Option<u32>,
     ) {
         let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: None,
@@ -185,14 +195,19 @@ impl BlitState {
             })],
             depth_stencil_attachment: None,
         });
-        rpass.set_pipeline(&self.render_pipeline);
+        if let Some(view_index) = view_index {
+            rpass.set_pipeline(&self.render_pipeline_window);
+            rpass.set_push_constants(
+                wgpu::ShaderStages::FRAGMENT,
+                0,
+                bytemuck::cast_slice(&[view_index]),
+            );
+        } else {
+            rpass.set_pipeline(&self.render_pipeline_headset);
+        }
         rpass.set_bind_group(0, &self.bind_group, &[]);
         rpass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-        rpass.set_push_constants(
-            wgpu::ShaderStages::FRAGMENT,
-            0,
-            bytemuck::cast_slice(&[view_index]),
-        );
+
         rpass.draw(0..6, 0..1);
     }
 }
