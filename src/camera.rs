@@ -13,22 +13,55 @@ pub struct PerspectiveCamera {
 }
 impl PerspectiveCamera {
     pub fn to_view_proj_matrices(&self) -> Vec<f32> {
-        let ipd = 68.3 / 1_000.0;
+        let ipd = 63.0 / 1_000.0;
         let offset = vec4(ipd / 2.0, 0.0, 0.0, 0.0);
 
         let view = Mat4::look_at_rh(self.eye, self.target, self.up);
         let proj = Mat4::perspective_rh(self.fov_y_rad, self.aspect_ratio, self.z_near, self.z_far);
 
-        let mut view_l = view;
-        view_l.w_axis += view * -offset;
+        [-offset, offset]
+            .map(|o| {
+                let mut view = view;
+                view.w_axis += view * o;
+                (proj * view).to_cols_array()
+            })
+            .concat()
+    }
+    #[cfg(feature = "xr")]
+    pub fn to_view_proj_matrices_with_xr_views(&self, views: &[openxr::View]) -> Vec<f32> {
+        let view = Mat4::look_at_rh(self.eye, self.target, self.up);
 
-        let mut view_r = view;
-        view_r.w_axis += view * offset;
-        [
-            (proj * view_l).to_cols_array(),
-            (proj * view_r).to_cols_array(),
-        ]
-        .concat()
+        views
+            .iter()
+            .flat_map(|v| {
+                let tan_left = v.fov.angle_left.tan();
+                let tan_right = v.fov.angle_right.tan();
+
+                let tan_down = v.fov.angle_down.tan();
+                let tan_up = v.fov.angle_up.tan();
+
+                let tan_width = tan_right - tan_left;
+                let tan_height = tan_up - tan_down;
+
+                let a11 = 2.0 / tan_width;
+                let a22 = 2.0 / tan_height;
+
+                let a31 = (tan_right + tan_left) / tan_width;
+                let a32 = (tan_up + tan_down) / tan_height;
+                let a33 = -self.z_far / (self.z_far - self.z_near);
+
+                let a43 = -(self.z_far * self.z_near) / (self.z_far - self.z_near);
+
+                let proj = glam::Mat4::from_cols_array(&[
+                    a11, 0.0, 0.0, 0.0, //
+                    0.0, a22, 0.0, 0.0, //
+                    a31, a32, a33, -1.0, //
+                    0.0, 0.0, a43, 0.0, //
+                ]);
+
+                (proj * view).to_cols_array()
+            })
+            .collect()
     }
     pub fn resize(&mut self, inner_size: winit::dpi::PhysicalSize<u32>) {
         self.aspect_ratio = inner_size.width as f32 / inner_size.height as f32;

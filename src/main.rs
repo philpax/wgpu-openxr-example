@@ -221,37 +221,46 @@ fn main() -> anyhow::Result<()> {
         blit_state.encode_draw_pass(&mut encoder, &view, Some(view_index));
 
         let time_since_start = start_time.elapsed().as_secs_f32();
-        camera_state.data.eye.z = time_since_start.cos() - 1.0;
-        wgpu_state.queue.write_buffer(
-            camera_state.buffer(),
-            0,
-            bytemuck::cast_slice(&camera_state.data.to_view_proj_matrices()),
-        );
-
         main_state.instances[0].1 = Quat::from_rotation_y(time_since_start / std::f32::consts::PI);
         main_state.upload_instances(&wgpu_state.queue);
 
+        camera_state.data.eye.z = time_since_start.cos() - 1.0;
         #[cfg(feature = "xr")]
-        // todo: upload views just before submitting the queue
-        let views = if let Some((xr_state, xr_frame_state)) = xr_state.as_mut().zip(xr_frame_state)
-        {
-            xr_state
-                .post_frame(
-                    &wgpu_state.device,
-                    xr_frame_state,
-                    &mut encoder,
-                    &blit_state,
-                )
-                .unwrap()
-        } else {
-            vec![]
-        };
+        let views = xr_state
+            .as_mut()
+            .zip(xr_frame_state)
+            .map(|(xr_state, xr_frame_state)| {
+                xr_state
+                    .post_frame(
+                        &wgpu_state.device,
+                        xr_frame_state,
+                        &mut encoder,
+                        &blit_state,
+                    )
+                    .unwrap()
+            });
+
+        wgpu_state.queue.write_buffer(
+            camera_state.buffer(),
+            0,
+            bytemuck::cast_slice(&{
+                #[cfg(feature = "xr")]
+                match &views {
+                    Some(views) => camera_state.data.to_view_proj_matrices_with_xr_views(views),
+                    None => camera_state.data.to_view_proj_matrices(),
+                }
+                #[cfg(not(feature = "xr"))]
+                camera_state.data.to_view_proj_matrices()
+            }),
+        );
 
         wgpu_state.queue.submit(Some(encoder.finish()));
 
         #[cfg(feature = "xr")]
-        if let Some((xr_state, xr_frame_state)) = xr_state.as_mut().zip(xr_frame_state) {
-            xr_state.post_queue_submit(xr_frame_state, &views).unwrap();
+        if let (Some(xr_state), Some(xr_frame_state), Some(views)) =
+            (xr_state.as_mut(), xr_frame_state, &views)
+        {
+            xr_state.post_queue_submit(xr_frame_state, views).unwrap();
         }
 
         frame.present();
