@@ -10,10 +10,8 @@ struct BlitVertexOutput {
 
 @group(0) @binding(0)
 var blit_texture: texture_2d_array<f32>;
-@group(0)@binding(1)
+@group(0) @binding(1)
 var blit_sampler: sampler;
-
-var<push_constant> view_index: u32;
 
 @vertex
 fn blit_vs_main(model: BlitVertexInput) -> BlitVertexOutput {
@@ -21,9 +19,4 @@ fn blit_vs_main(model: BlitVertexInput) -> BlitVertexOutput {
     out.position = vec4<f32>(model.position, 1.0);
     out.uv_coords = model.uv_coords;
     return out;
-}
-
-@fragment
-fn blit_fs_main(in: BlitVertexOutput) -> @location(0) vec4<f32> {
-    return textureSample(blit_texture, blit_sampler, in.uv_coords, i32(view_index));
 }

@@ -1,5 +1,5 @@
 use glam::{vec3, Mat4, Quat, Vec3};
-use std::{borrow::Cow, num::NonZeroU32};
+use std::{borrow::Cow, num::NonZeroU32, path::Path};
 use wgpu::util::DeviceExt;
 
 use crate::{
@@ -19,6 +19,7 @@ pub struct MainState {
 impl MainState {
     pub fn new(
         device: &wgpu::Device,
+        preprocessor: &crate::wgsl::Preprocessor,
         camera_state: &CameraState,
         swapchain_format: wgpu::TextureFormat,
     ) -> Self {
@@ -47,7 +48,9 @@ impl MainState {
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: None,
-            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("main.wgsl"))),
+            source: wgpu::ShaderSource::Wgsl(Cow::Owned(
+                preprocessor.preprocess("main.wgsl").unwrap(),
+            )),
         });
         let vertex_buffer_layout = wgpu::VertexBufferLayout {
             array_stride: std::mem::size_of::<Vertex>() as _,

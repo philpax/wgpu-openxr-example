@@ -1,5 +1,5 @@
 use glam::{vec3, Vec3};
-use std::borrow::Cow;
+use std::{borrow::Cow, path::Path};
 use wgpu::util::DeviceExt;
 
 pub struct BlitState {
@@ -14,6 +14,7 @@ pub struct BlitState {
 impl BlitState {
     pub fn new(
         device: &wgpu::Device,
+        preprocessor: &crate::wgsl::Preprocessor,
         render_target_view: &wgpu::TextureView,
         swapchain_format: wgpu::TextureFormat,
     ) -> Self {
@@ -92,7 +93,9 @@ impl BlitState {
         };
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: None,
-            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("blit.wgsl"))),
+            source: wgpu::ShaderSource::Wgsl(Cow::Owned(
+                preprocessor.preprocess("blit.wgsl").unwrap(),
+            )),
         });
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: None,

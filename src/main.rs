@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use anyhow::Context;
 use glam::{vec3, vec4, Quat};
 use wgpu::util::DeviceExt;
@@ -14,6 +16,8 @@ mod camera;
 mod main_state;
 mod texture;
 mod types;
+
+pub mod wgsl;
 
 use blit_state::BlitState;
 use camera::CameraState;
@@ -75,8 +79,15 @@ fn main() -> anyhow::Result<()> {
 
     let mut camera_state = CameraState::new(&wgpu_state.device, window.inner_size());
 
+    let preprocessor = wgsl::Preprocessor::from_directory(Path::new("shaders"))?;
+
     let swapchain_format = surface.get_supported_formats(&wgpu_state.adapter)[0];
-    let mut main_state = MainState::new(&wgpu_state.device, &camera_state, swapchain_format);
+    let mut main_state = MainState::new(
+        &wgpu_state.device,
+        &preprocessor,
+        &camera_state,
+        swapchain_format,
+    );
 
     let mut config = {
         let size = window.inner_size();
@@ -91,7 +102,12 @@ fn main() -> anyhow::Result<()> {
     surface.configure(&wgpu_state.device, &config);
     let mut depth_texture = Texture::new_depth_texture(&wgpu_state.device, &config);
     let mut rt_texture = Texture::new_rt_texture(&wgpu_state.device, &config, swapchain_format);
-    let mut blit_state = BlitState::new(&wgpu_state.device, rt_texture.view(), swapchain_format);
+    let mut blit_state = BlitState::new(
+        &wgpu_state.device,
+        &preprocessor,
+        rt_texture.view(),
+        swapchain_format,
+    );
 
     let triangle_vertex_buffer =
         wgpu_state
