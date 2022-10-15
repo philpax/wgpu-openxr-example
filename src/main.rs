@@ -224,7 +224,6 @@ fn main() -> anyhow::Result<()> {
         main_state.instances[0].1 = Quat::from_rotation_y(time_since_start / std::f32::consts::PI);
         main_state.upload_instances(&wgpu_state.queue);
 
-        camera_state.data.eye.z = time_since_start.cos() - 1.0;
         #[cfg(feature = "xr")]
         let views = xr_state
             .as_mut()

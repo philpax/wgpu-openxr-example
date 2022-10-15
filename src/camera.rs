@@ -8,6 +8,7 @@ pub struct PerspectiveCamera {
 
     pub aspect_ratio: f32,
     pub fov_y_rad: f32,
+
     pub z_near: f32,
     pub z_far: f32,
 }
@@ -29,17 +30,33 @@ impl PerspectiveCamera {
     }
     #[cfg(feature = "xr")]
     pub fn to_view_proj_matrices_with_xr_views(&self, views: &[openxr::View]) -> Vec<f32> {
-        let view = Mat4::look_at_rh(self.eye, self.target, self.up);
+        use glam::Quat;
 
         views
             .iter()
             .flat_map(|v| {
-                let tan_left = v.fov.angle_left.tan();
-                let tan_right = v.fov.angle_right.tan();
+                let pose = v.pose;
+                // with enough sign errors anything is possible
+                let xr_rotation = {
+                    let o = pose.orientation;
+                    Quat::from_rotation_x(180.0f32.to_radians()) * glam::quat(o.w, o.z, o.y, o.x)
+                };
+                let xr_translation =
+                    glam::vec3(-pose.position.x, pose.position.y, -pose.position.z);
 
-                let tan_down = v.fov.angle_down.tan();
-                let tan_up = v.fov.angle_up.tan();
+                let view = Mat4::look_at_rh(
+                    self.eye + xr_translation,
+                    self.eye + xr_translation + xr_rotation * Vec3::Z,
+                    xr_rotation * Vec3::Y,
+                );
 
+                let [tan_left, tan_right, tan_down, tan_up] = [
+                    v.fov.angle_left,
+                    v.fov.angle_right,
+                    v.fov.angle_down,
+                    v.fov.angle_up,
+                ]
+                .map(f32::tan);
                 let tan_width = tan_right - tan_left;
                 let tan_height = tan_up - tan_down;
 
@@ -81,8 +98,10 @@ impl CameraState {
             eye: Vec3::ZERO,
             target: vec3(0.0, 0.0, 1.0),
             up: Vec3::Y,
+
             aspect_ratio: inner_size.width as f32 / inner_size.height as f32,
             fov_y_rad: 90.0f32.to_radians(),
+
             z_near: 0.05,
             z_far: 1000.0,
         };
