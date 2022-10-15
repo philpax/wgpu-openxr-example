@@ -38,8 +38,9 @@ impl Preprocessor {
                 .map(|p| {
                     Ok((
                         PathBuf::from(
-                            p.file_name()
-                                .ok_or(std::io::Error::from(std::io::ErrorKind::NotFound))?,
+                            p.file_name().ok_or_else(|| {
+                                std::io::Error::from(std::io::ErrorKind::NotFound)
+                            })?,
                         ),
                         std::fs::read_to_string(&p)?,
                     ))
