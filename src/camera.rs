@@ -28,6 +28,7 @@ impl PerspectiveCamera {
             })
             .concat()
     }
+
     #[cfg(feature = "xr")]
     pub fn to_view_proj_matrices_with_xr_views(&self, views: &[openxr::View]) -> Vec<f32> {
         use glam::Quat;
@@ -80,6 +81,7 @@ impl PerspectiveCamera {
             })
             .collect()
     }
+
     pub fn resize(&mut self, inner_size: winit::dpi::PhysicalSize<u32>) {
         self.aspect_ratio = inner_size.width as f32 / inner_size.height as f32;
     }
@@ -139,6 +141,7 @@ impl CameraState {
             bind_group,
         }
     }
+
     pub fn buffer(&self) -> &wgpu::Buffer {
         &self.buffer
     }

@@ -147,6 +147,7 @@ impl BlitState {
             vertex_buffer,
         }
     }
+
     pub fn resize(&mut self, device: &wgpu::Device, render_target_view: &wgpu::TextureView) {
         self.bind_group = Self::create_bind_group(
             device,
@@ -155,6 +156,7 @@ impl BlitState {
             &self.sampler,
         );
     }
+
     fn create_bind_group(
         device: &wgpu::Device,
         bind_group_layout: &wgpu::BindGroupLayout,
@@ -176,6 +178,7 @@ impl BlitState {
             label: Some("blit_bind_group"),
         })
     }
+
     pub fn encode_draw_pass(
         &self,
         encoder: &mut wgpu::CommandEncoder,

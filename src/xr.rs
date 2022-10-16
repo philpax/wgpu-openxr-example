@@ -337,6 +337,7 @@ impl XrState {
 
         Ok(Some(xr_frame_state))
     }
+
     pub fn post_frame(
         &mut self,
         device: &wgpu::Device,
@@ -497,6 +498,7 @@ impl XrState {
 
         Ok(views)
     }
+
     pub fn post_queue_submit(
         &mut self,
         xr_frame_state: xr::FrameState,
@@ -543,6 +545,7 @@ impl XrState {
 
         Ok(())
     }
+
     pub fn views(&self) -> &[ViewConfigurationView] {
         self.views.as_ref()
     }

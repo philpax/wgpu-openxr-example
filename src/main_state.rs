@@ -106,6 +106,7 @@ impl MainState {
             instance_buffer,
         }
     }
+
     pub fn upload_instances(&self, queue: &wgpu::Queue) {
         queue.write_buffer(
             &self.instance_buffer,
@@ -113,6 +114,7 @@ impl MainState {
             bytemuck::cast_slice(&Self::instances_to_data(&self.instances)),
         );
     }
+
     fn instances_to_data(poses: &[(Vec3, Quat)]) -> Vec<f32> {
         poses
             .iter()
@@ -126,6 +128,7 @@ impl MainState {
             })
             .collect()
     }
+
     pub fn encode_draw_pass(
         &self,
         encoder: &mut wgpu::CommandEncoder,

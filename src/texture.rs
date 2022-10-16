@@ -45,6 +45,7 @@ impl Texture {
             view,
         }
     }
+
     pub fn new_depth_texture(device: &wgpu::Device, config: &wgpu::SurfaceConfiguration) -> Self {
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("Depth Texture"),
@@ -69,6 +70,7 @@ impl Texture {
             view,
         }
     }
+
     pub fn view(&self) -> &wgpu::TextureView {
         &self.view
     }
