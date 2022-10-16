@@ -1,4 +1,4 @@
-use glam::{vec3, Mat4, Quat, Vec3};
+use glam::{Mat4, Quat, Vec3};
 use std::{borrow::Cow, num::NonZeroU32};
 use wgpu::util::DeviceExt;
 
@@ -7,13 +7,37 @@ use crate::{
     types::{Vertex, DEPTH_FORMAT, VIEW_COUNT},
 };
 
+pub struct Instance {
+    pub translation: Vec3,
+    pub rotation: Quat,
+    pub scale: Vec3,
+}
+impl Instance {
+    pub fn new(translation: Vec3, rotation: Quat, scale: Vec3) -> Self {
+        Self {
+            translation,
+            rotation,
+            scale,
+        }
+    }
+
+    fn to_cols_array(&self) -> [f32; 16] {
+        Mat4::from(glam::Affine3A::from_scale_rotation_translation(
+            self.scale,
+            self.rotation,
+            self.translation,
+        ))
+        .to_cols_array()
+    }
+}
+
 pub struct MainState {
     #[allow(dead_code)]
     shader: wgpu::ShaderModule,
     #[allow(dead_code)]
     pipeline_layout: wgpu::PipelineLayout,
     pipeline: wgpu::RenderPipeline,
-    pub instances: [(Vec3, Quat); 3],
+    pub instances: Vec<Instance>,
     instance_buffer: wgpu::Buffer,
 }
 impl MainState {
@@ -22,12 +46,8 @@ impl MainState {
         preprocessor: &crate::wgsl::Preprocessor,
         camera_state: &CameraState,
         swapchain_format: wgpu::TextureFormat,
+        instances: Vec<Instance>,
     ) -> Self {
-        let instances = [
-            (vec3(0.0, 0.0, 1.0), Quat::IDENTITY),
-            (vec3(1.0, 0.0, 2.0), Quat::IDENTITY),
-            (vec3(-1.0, 0.0, 2.0), Quat::IDENTITY),
-        ];
         let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Index Buffer"),
             contents: bytemuck::cast_slice(&Self::instances_to_data(&instances)),
@@ -115,18 +135,8 @@ impl MainState {
         );
     }
 
-    fn instances_to_data(poses: &[(Vec3, Quat)]) -> Vec<f32> {
-        poses
-            .iter()
-            .flat_map(|(t, r)| {
-                Mat4::from(glam::Affine3A::from_scale_rotation_translation(
-                    Vec3::ONE,
-                    *r,
-                    *t,
-                ))
-                .to_cols_array()
-            })
-            .collect()
+    fn instances_to_data(poses: &[Instance]) -> Vec<f32> {
+        poses.iter().flat_map(Instance::to_cols_array).collect()
     }
 
     pub fn encode_draw_pass(

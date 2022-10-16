@@ -2,6 +2,7 @@ use std::{ffi::c_void, num::NonZeroU32};
 
 use anyhow::Context;
 use ash::vk::{self, Handle};
+use glam::{Quat, Vec3};
 use openxr::{self as xr, ViewConfigurationView};
 
 use crate::{texture::Texture, types::VIEW_COUNT, WgpuState};
@@ -10,6 +11,23 @@ pub const WGPU_COLOR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Uno
 pub const VK_COLOR_FORMAT: vk::Format = vk::Format::R8G8B8A8_SRGB;
 
 const VIEW_TYPE: xr::ViewConfigurationType = xr::ViewConfigurationType::PRIMARY_STEREO;
+
+#[derive(Default)]
+pub struct PostFrameData {
+    pub views: Vec<openxr::View>,
+    pub left_hand: Option<(Vec3, Quat)>,
+    pub right_hand: Option<(Vec3, Quat)>,
+}
+
+pub fn openxr_pose_to_glam(pose: &openxr::Posef) -> (Vec3, Quat) {
+    // with enough sign errors anything is possible
+    let rotation = {
+        let o = pose.orientation;
+        Quat::from_rotation_x(180.0f32.to_radians()) * glam::quat(o.w, o.z, o.y, o.x)
+    };
+    let translation = glam::vec3(-pose.position.x, pose.position.y, -pose.position.z);
+    (translation, rotation)
+}
 
 pub struct XrState {
     xr_instance: xr::Instance,
@@ -290,6 +308,7 @@ impl XrState {
             },
         ))
     }
+
     pub fn pre_frame(&mut self) -> anyhow::Result<Option<xr::FrameState>> {
         while let Some(event) = self.xr_instance.poll_event(&mut self.event_storage)? {
             use xr::Event::*;
@@ -344,7 +363,7 @@ impl XrState {
         xr_frame_state: xr::FrameState,
         encoder: &mut wgpu::CommandEncoder,
         blit_state: &crate::BlitState,
-    ) -> anyhow::Result<Vec<openxr::View>> {
+    ) -> anyhow::Result<PostFrameData> {
         use wgpu_hal::{api::Vulkan as V, Api};
         if !xr_frame_state.should_render {
             self.frame_stream.end(
@@ -352,7 +371,7 @@ impl XrState {
                 self.environment_blend_mode,
                 &[],
             )?;
-            return Ok(vec![]);
+            return Ok(PostFrameData::default());
         }
 
         let swapchain = self.swapchain.get_or_insert_with(|| {
@@ -448,34 +467,23 @@ impl XrState {
         });
 
         self.session.sync_actions(&[(&self.action_set).into()])?;
-        let right_location = self
-            .right_space
-            .locate(&self.stage, xr_frame_state.predicted_display_time)?;
-        let left_location = self
-            .left_space
-            .locate(&self.stage, xr_frame_state.predicted_display_time)?;
-        let mut printed = false;
-        if self.left_action.is_active(&self.session, xr::Path::NULL)? {
-            print!(
-                "Left Hand: ({:0<12},{:0<12},{:0<12}), ",
-                left_location.pose.position.x,
-                left_location.pose.position.y,
-                left_location.pose.position.z
-            );
-            printed = true;
-        }
-        if self.right_action.is_active(&self.session, xr::Path::NULL)? {
-            print!(
-                "Right Hand: ({:0<12},{:0<12},{:0<12})",
-                right_location.pose.position.x,
-                right_location.pose.position.y,
-                right_location.pose.position.z
-            );
-            printed = true;
-        }
-        if printed {
-            println!();
-        }
+        let locate_hand_pose = |action: &xr::Action<xr::Posef>,
+                                space: &xr::Space|
+         -> anyhow::Result<Option<(Vec3, Quat)>> {
+            if action.is_active(&self.session, xr::Path::NULL)? {
+                Ok(Some(openxr_pose_to_glam(
+                    &space
+                        .locate(&self.stage, xr_frame_state.predicted_display_time)?
+                        .pose,
+                )))
+            } else {
+                Ok(None)
+            }
+        };
+
+        let left_hand = locate_hand_pose(&self.left_action, &self.left_space)?;
+        let right_hand = locate_hand_pose(&self.right_action, &self.right_space)?;
+
         let (_, views) = self.session.locate_views(
             VIEW_TYPE,
             xr_frame_state.predicted_display_time,
@@ -496,7 +504,11 @@ impl XrState {
             None,
         );
 
-        Ok(views)
+        Ok(PostFrameData {
+            views,
+            left_hand,
+            right_hand,
+        })
     }
 
     pub fn post_queue_submit(

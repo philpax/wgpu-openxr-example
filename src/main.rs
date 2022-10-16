@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use anyhow::Context;
-use glam::{vec3, vec4, Quat};
+use glam::{vec3, vec4, Quat, Vec3};
 use wgpu::util::DeviceExt;
 use winit::{
     event::{ElementState, Event, KeyboardInput, VirtualKeyCode, WindowEvent},
@@ -21,7 +21,7 @@ pub mod wgsl;
 
 use blit_state::BlitState;
 use camera::CameraState;
-use main_state::MainState;
+use main_state::{Instance, MainState};
 use texture::Texture;
 use types::*;
 
@@ -35,6 +35,9 @@ pub struct WgpuState {
 
 fn main() -> anyhow::Result<()> {
     use clap::{command, Parser};
+
+    const MAIN_TRIANGLE_SCALE: f32 = 1.0;
+    const HAND_TRIANGLE_SCALE: f32 = 0.1;
 
     #[derive(Parser, PartialEq)]
     #[command(author, version, about)]
@@ -88,6 +91,23 @@ fn main() -> anyhow::Result<()> {
         &preprocessor,
         &camera_state,
         window_swapchain_format,
+        vec![
+            Instance::new(
+                vec3(0.0, 0.0, 1.0),
+                Quat::IDENTITY,
+                Vec3::ONE * MAIN_TRIANGLE_SCALE,
+            ),
+            Instance::new(
+                vec3(1.0, 0.0, 2.0),
+                Quat::IDENTITY,
+                Vec3::ONE * HAND_TRIANGLE_SCALE,
+            ),
+            Instance::new(
+                vec3(-1.0, 0.0, 2.0),
+                Quat::IDENTITY,
+                Vec3::ONE * HAND_TRIANGLE_SCALE,
+            ),
+        ],
     );
 
     let mut config = {
@@ -239,12 +259,8 @@ fn main() -> anyhow::Result<()> {
             .create_view(&wgpu::TextureViewDescriptor::default());
         blit_state.encode_draw_pass(&mut encoder, &view, Some(view_index));
 
-        let time_since_start = start_time.elapsed().as_secs_f32();
-        main_state.instances[0].1 = Quat::from_rotation_y(time_since_start / std::f32::consts::PI);
-        main_state.upload_instances(&wgpu_state.queue);
-
         #[cfg(feature = "xr")]
-        let views = xr_state
+        let pfd = xr_state
             .as_mut()
             .zip(xr_frame_state)
             .map(|(xr_state, xr_frame_state)| {
@@ -258,13 +274,31 @@ fn main() -> anyhow::Result<()> {
                     .unwrap()
             });
 
+        let time_since_start = start_time.elapsed().as_secs_f32();
+        {
+            let insts = &mut main_state.instances;
+            insts[0].rotation = Quat::from_rotation_y(time_since_start / std::f32::consts::PI);
+            #[cfg(feature = "xr")]
+            if let Some(pfd) = &pfd {
+                if let Some(lh) = pfd.left_hand {
+                    (insts[1].translation, insts[1].rotation) = lh;
+                }
+                if let Some(rh) = pfd.right_hand {
+                    (insts[2].translation, insts[2].rotation) = rh;
+                }
+            }
+        }
+        main_state.upload_instances(&wgpu_state.queue);
+
         wgpu_state.queue.write_buffer(
             camera_state.buffer(),
             0,
             bytemuck::cast_slice(&{
                 #[cfg(feature = "xr")]
-                match &views {
-                    Some(views) => camera_state.data.to_view_proj_matrices_with_xr_views(views),
+                match &pfd {
+                    Some(pfd) => camera_state
+                        .data
+                        .to_view_proj_matrices_with_xr_views(&pfd.views),
                     None => camera_state.data.to_view_proj_matrices(),
                 }
                 #[cfg(not(feature = "xr"))]
@@ -275,10 +309,12 @@ fn main() -> anyhow::Result<()> {
         wgpu_state.queue.submit(Some(encoder.finish()));
 
         #[cfg(feature = "xr")]
-        if let (Some(xr_state), Some(xr_frame_state), Some(views)) =
-            (xr_state.as_mut(), xr_frame_state, &views)
+        if let (Some(xr_state), Some(xr_frame_state), Some(pfd)) =
+            (xr_state.as_mut(), xr_frame_state, &pfd)
         {
-            xr_state.post_queue_submit(xr_frame_state, views).unwrap();
+            xr_state
+                .post_queue_submit(xr_frame_state, &pfd.views)
+                .unwrap();
         }
 
         frame.present();

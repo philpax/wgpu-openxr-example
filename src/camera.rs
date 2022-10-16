@@ -31,19 +31,11 @@ impl PerspectiveCamera {
 
     #[cfg(feature = "xr")]
     pub fn to_view_proj_matrices_with_xr_views(&self, views: &[openxr::View]) -> Vec<f32> {
-        use glam::Quat;
-
         views
             .iter()
             .flat_map(|v| {
                 let pose = v.pose;
-                // with enough sign errors anything is possible
-                let xr_rotation = {
-                    let o = pose.orientation;
-                    Quat::from_rotation_x(180.0f32.to_radians()) * glam::quat(o.w, o.z, o.y, o.x)
-                };
-                let xr_translation =
-                    glam::vec3(-pose.position.x, pose.position.y, -pose.position.z);
+                let (xr_translation, xr_rotation) = crate::xr::openxr_pose_to_glam(&pose);
 
                 let view = Mat4::look_at_rh(
                     self.eye + xr_translation,
