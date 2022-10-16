@@ -47,6 +47,7 @@ fn main() -> anyhow::Result<()> {
         Xr,
     }
 
+    #[cfg(feature = "xr")]
     let args = Args::parse();
 
     let wgpu_features = wgpu::Features::MULTIVIEW | wgpu::Features::PUSH_CONSTANTS;
@@ -108,6 +109,9 @@ fn main() -> anyhow::Result<()> {
         &preprocessor,
         rt_texture.view(),
         window_swapchain_format,
+        #[cfg(not(feature = "xr"))]
+        window_swapchain_format,
+        #[cfg(feature = "xr")]
         xr::WGPU_COLOR_FORMAT,
     );
 

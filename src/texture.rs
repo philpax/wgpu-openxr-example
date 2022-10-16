@@ -8,6 +8,7 @@ pub struct Texture {
 }
 
 impl Texture {
+    #[allow(dead_code)]
     pub fn from_wgpu(texture: wgpu::Texture, view: wgpu::TextureView) -> Self {
         Self {
             _texture: texture,
