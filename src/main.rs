@@ -187,6 +187,21 @@ fn main() -> anyhow::Result<()> {
             } => {
                 view_index = (view_index + 1) % 2;
             }
+            Event::WindowEvent {
+                event:
+                    WindowEvent::KeyboardInput {
+                        input:
+                            KeyboardInput {
+                                virtual_keycode: Some(VirtualKeyCode::Escape),
+                                state: ElementState::Released,
+                                ..
+                            },
+                        ..
+                    },
+                ..
+            } => {
+                *control_flow = ControlFlow::Exit;
+            }
             Event::MainEventsCleared => {
                 window.request_redraw();
                 cleared = true;
