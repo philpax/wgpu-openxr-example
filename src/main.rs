@@ -325,9 +325,11 @@ fn main() -> anyhow::Result<()> {
         if let (Some(xr_state), Some(xr_frame_state), Some(pfd)) =
             (xr_state.as_mut(), xr_frame_state, &pfd)
         {
-            xr_state
-                .post_queue_submit(xr_frame_state, &pfd.views)
-                .unwrap();
+            if xr_frame_state.should_render {
+                xr_state
+                    .post_queue_submit(xr_frame_state, &pfd.views)
+                    .unwrap();
+            }
         }
 
         frame.present();
