@@ -16,6 +16,23 @@ Note that this code is not production-quality; there are a few shortcuts that ha
 in the interest of keeping it simple and relatively modular. Make sure to clean up your resources
 properly and use robust code where possible :)
 
+## Rendering flow
+
+The code renders three instances of a triangle (two being the controllers) to a multi-view render target.
+
+- In desktop mode, this render target is then blitted to the swapchain, and the user can select which view
+  to look at using the arrow keys.
+- In desktop with XR resolution mode, much the same occurs, except the window is resized to the XR headset's
+  render resolution.
+- In XR mode, the program synchronises with the headset and blits the multi-view render target to the
+  headset as well.
+
+Rendering to a render target is necessary to accommodate these:
+
+- Showing what the user is seeing within the desktop window, without having to re-render the scene
+- Decoupling the colour formats of the various display surfaces; wgpu (on my machine) will offer
+  `BGRA8888`, while my OpenXR runtime offers `RGBA8888`.
+
 ## Future
 
 It should theoretically be possible to do the following:
