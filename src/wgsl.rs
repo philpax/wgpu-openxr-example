@@ -1,3 +1,5 @@
+//! Implements a very simple preprocessor to embed other WGSL files.
+
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
@@ -5,6 +7,9 @@ use std::{
 
 use anyhow::Context;
 
+/// Preprocesses the given `current_file` within the `files`, and returns the preprocessed file.
+/// `files` must contain non-preprocessed files.
+///
 /// This is _not_ a robust preprocessor. It's the bare minimum to make this example work.
 /// This *will* fall down at the first hurdle.
 pub fn preprocess(files: &HashMap<PathBuf, String>, current_file: &str) -> anyhow::Result<String> {
@@ -25,10 +30,12 @@ pub fn preprocess(files: &HashMap<PathBuf, String>, current_file: &str) -> anyho
     Ok(current_file)
 }
 
+/// A helper for [preprocess] that wraps it with some files to use for state.
 pub struct Preprocessor {
     files: HashMap<PathBuf, String>,
 }
 impl Preprocessor {
+    /// Create a [Preprocessor] from the given `path`.
     pub fn from_directory(path: &Path) -> std::io::Result<Self> {
         Ok(Self {
             files: std::fs::read_dir(path)?
@@ -49,12 +56,14 @@ impl Preprocessor {
         })
     }
 
+    /// Runs [crate::preprocess] on the given `filename`, assuming that it is within the files that
+    /// initialized this preprocessor.
     pub fn preprocess(&self, filename: impl AsRef<Path>) -> anyhow::Result<String> {
         preprocess(
             &self.files,
             self.files
                 .get(filename.as_ref())
-                .context("File not present!")?
+                .context("file not present")?
                 .as_str(),
         )
     }

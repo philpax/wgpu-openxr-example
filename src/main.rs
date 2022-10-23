@@ -1,3 +1,15 @@
+#![deny(missing_docs)]
+//! wgpu-openxr-example is a barebones example of how to integrate OpenXR with wgpu (Vulkan-only).
+//!
+//! It has four modes:
+//!   - cargo run --no-default-features: desktop-only, renders the scene without *any* XR integration
+//!   - cargo run -- desktop: build with XR support, but render the scene without initialising XR
+//!   - cargo run -- desktop-with-xr-resolution: build with XR support, initialise XR, but do not render to headset
+//!   - cargo run -- xr: build with XR support, and render to the headset
+//!
+//! These modes are intended to show you how to gracefully integrate XR into your project's code
+//! and how you can move from one stage of integration to the next.
+
 use std::path::Path;
 
 use anyhow::Context;
@@ -25,7 +37,8 @@ use main_state::{Instance, MainState};
 use texture::Texture;
 use types::*;
 
-#[allow(dead_code)]
+/// Encapsulates all wgpu device-related state. Used to isolate XR initialisation
+/// from desktop initialisation.
 pub struct WgpuState {
     instance: wgpu::Instance,
     adapter: wgpu::Adapter,
