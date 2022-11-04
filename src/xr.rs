@@ -58,6 +58,7 @@ impl XrState {
         assert!(available_extensions.khr_vulkan_enable2);
         let mut enabled_extensions = xr::ExtensionSet::default();
         enabled_extensions.khr_vulkan_enable2 = true;
+        enabled_extensions.khr_vulkan_enable = true;
         #[cfg(target_os = "android")]
         {
             enabled_extensions.khr_android_create_instance = true;
@@ -73,7 +74,7 @@ impl XrState {
             &[],
         )?;
         let instance_props = xr_instance.properties()?;
-        println!(
+        log::info!(
             "loaded OpenXR runtime: {} {}",
             instance_props.runtime_name, instance_props.runtime_version
         );
@@ -316,7 +317,7 @@ impl XrState {
                 SessionStateChanged(e) => {
                     // Session state change is where we can begin and end sessions, as well as
                     // find quit messages!
-                    println!("entered state {:?}", e.state());
+                    log::info!("entered state {:?}", e.state());
                     match e.state() {
                         xr::SessionState::READY => {
                             self.session.begin(VIEW_TYPE)?;
@@ -336,7 +337,7 @@ impl XrState {
                     return Ok(None);
                 }
                 EventsLost(e) => {
-                    println!("lost {} events", e.lost_event_count());
+                    log::warn!("lost {} events", e.lost_event_count());
                 }
                 _ => {}
             }

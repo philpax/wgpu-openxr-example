@@ -31,6 +31,7 @@ mod types;
 
 pub mod wgsl;
 
+use clap::{command, Parser};
 use blit_state::BlitState;
 use camera::CameraState;
 use main_state::{Instance, MainState};
@@ -47,7 +48,16 @@ pub struct WgpuState {
 }
 
 fn main() -> anyhow::Result<()> {
-    use clap::{command, Parser};
+    fast_log::init(
+        fast_log::Config::new()
+            .console()
+            .level(log::LevelFilter::Trace)
+            .filter(fast_log::filter::ModuleFilter::new_include(vec![
+                "wgpu".to_string(),
+                "wgpu_openxr_example".to_string(),
+            ])),
+    )
+    .unwrap();
 
     const MAIN_TRIANGLE_SCALE: f32 = 1.0;
     const HAND_TRIANGLE_SCALE: f32 = 0.1;
