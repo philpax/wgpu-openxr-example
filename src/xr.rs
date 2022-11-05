@@ -1,4 +1,7 @@
-use std::{ffi::c_void, num::NonZeroU32};
+use std::{
+    ffi::{c_void, CString},
+    num::NonZeroU32,
+};
 
 use anyhow::Context;
 use ash::vk::{self, Handle};
@@ -76,7 +79,8 @@ impl XrState {
         let instance_props = xr_instance.properties()?;
         log::info!(
             "loaded OpenXR runtime: {} {}",
-            instance_props.runtime_name, instance_props.runtime_version
+            instance_props.runtime_name,
+            instance_props.runtime_version
         );
         let xr_system_id = xr_instance.system(xr::FormFactor::HEAD_MOUNTED_DISPLAY)?;
         let environment_blend_mode =
@@ -96,7 +100,10 @@ impl XrState {
 
         let vk_entry = unsafe { ash::Entry::load() }?;
         let flags = wgpu_hal::InstanceFlags::empty();
-        let extensions = <V as Api>::Instance::required_extensions(&vk_entry, flags)?;
+        let mut extensions = <V as Api>::Instance::required_extensions(&vk_entry, flags)?;
+        extensions.push(ash::extensions::khr::Swapchain::name());
+        log::info!("extensions: {:#?}", extensions);
+
 
         let vk_instance = unsafe {
             let extensions_cchar: Vec<_> = extensions.iter().map(|s| s.as_ptr()).collect();
