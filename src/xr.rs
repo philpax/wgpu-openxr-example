@@ -59,30 +59,40 @@ impl XrState {
         let entry = xr::Entry::linked();
         let available_extensions = entry.enumerate_extensions()?;
         assert!(available_extensions.khr_vulkan_enable2);
+        log::info!("available xr exts: {:#?}", available_extensions);
+
         let mut enabled_extensions = xr::ExtensionSet::default();
         enabled_extensions.khr_vulkan_enable2 = true;
-        enabled_extensions.khr_vulkan_enable = true;
         #[cfg(target_os = "android")]
         {
             enabled_extensions.khr_android_create_instance = true;
         }
+
+        let available_layers = entry.enumerate_layers()?;
+        log::info!("available xr layers: {:#?}", available_layers);
+
         let xr_instance = entry.create_instance(
             &xr::ApplicationInfo {
                 application_name: "wgpu-openxr-example",
-                application_version: 0,
-                engine_name: "wgpu-openxr-example",
-                engine_version: 0,
+                ..Default::default()
             },
             &enabled_extensions,
-            &[],
+            &["XR_APILAYER_LUNARG_core_validation"],
         )?;
         let instance_props = xr_instance.properties()?;
-        log::info!(
-            "loaded OpenXR runtime: {} {}",
-            instance_props.runtime_name,
-            instance_props.runtime_version
-        );
         let xr_system_id = xr_instance.system(xr::FormFactor::HEAD_MOUNTED_DISPLAY)?;
+        let system_props = xr_instance.system_properties(xr_system_id).unwrap();
+        log::info!(
+            "loaded OpenXR runtime: {} {} {}",
+            instance_props.runtime_name,
+            instance_props.runtime_version,
+            if system_props.system_name.is_empty() {
+                "<unnamed>"
+            } else {
+                &system_props.system_name
+            }
+        );
+
         let environment_blend_mode =
             xr_instance.enumerate_environment_blend_modes(xr_system_id, VIEW_TYPE)?[0];
         let vk_target_version = vk::make_api_version(0, 1, 1, 0);
@@ -102,15 +112,20 @@ impl XrState {
         let flags = wgpu_hal::InstanceFlags::empty();
         let mut extensions = <V as Api>::Instance::required_extensions(&vk_entry, flags)?;
         extensions.push(ash::extensions::khr::Swapchain::name());
-        log::info!("extensions: {:#?}", extensions);
-
+        log::info!(
+            "creating vulkan instance with these extensions: {:#?}",
+            extensions
+        );
 
         let vk_instance = unsafe {
             let extensions_cchar: Vec<_> = extensions.iter().map(|s| s.as_ptr()).collect();
 
+            let app_name = CString::new("wgpu-openxr-example")?;
             let vk_app_info = vk::ApplicationInfo::builder()
-                .application_version(0)
-                .engine_version(0)
+                .application_name(&app_name)
+                .application_version(1)
+                .engine_name(&app_name)
+                .engine_version(1)
                 .api_version(vk_target_version);
 
             let vk_instance = xr_instance
@@ -131,6 +146,8 @@ impl XrState {
                 vk::Instance::from_raw(vk_instance as _),
             )
         };
+        log::info!("  created vulkan instance");
+
         let vk_instance_ptr = vk_instance.handle().as_raw() as *const c_void;
 
         let vk_physical_device = vk::PhysicalDevice::from_raw(unsafe {
