@@ -146,7 +146,7 @@ impl XrState {
                 vk::Instance::from_raw(vk_instance as _),
             )
         };
-        log::info!("  created vulkan instance");
+        log::info!("created vulkan instance");
 
         let vk_instance_ptr = vk_instance.handle().as_raw() as *const c_void;
 
