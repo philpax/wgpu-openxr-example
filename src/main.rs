@@ -31,6 +31,7 @@ mod types;
 
 pub mod wgsl;
 
+use clap::{command, Parser};
 use blit_state::BlitState;
 use camera::CameraState;
 use main_state::{Instance, MainState};
@@ -47,7 +48,9 @@ pub struct WgpuState {
 }
 
 fn main() -> anyhow::Result<()> {
-    use clap::{command, Parser};
+    tracing_subscriber::FmtSubscriber::builder()
+        .with_env_filter("wgpu=trace,wgpu_openxr-example=trace")
+        .init();
 
     const MAIN_TRIANGLE_SCALE: f32 = 1.0;
     const HAND_TRIANGLE_SCALE: f32 = 0.1;
