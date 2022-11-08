@@ -14,6 +14,7 @@ use std::path::Path;
 
 use anyhow::Context;
 use glam::{vec3, vec4, Quat, Vec3};
+use tracing_subscriber::EnvFilter;
 use wgpu::util::DeviceExt;
 use winit::{
     event::{ElementState, Event, KeyboardInput, VirtualKeyCode, WindowEvent},
@@ -31,9 +32,9 @@ mod types;
 
 pub mod wgsl;
 
-use clap::{command, Parser};
 use blit_state::BlitState;
 use camera::CameraState;
+use clap::{command, Parser};
 use main_state::{Instance, MainState};
 use texture::Texture;
 use types::*;
@@ -49,7 +50,7 @@ pub struct WgpuState {
 
 fn main() -> anyhow::Result<()> {
     tracing_subscriber::FmtSubscriber::builder()
-        .with_env_filter("wgpu=trace,wgpu_openxr-example=trace")
+        .with_env_filter(EnvFilter::from_default_env())
         .init();
 
     const MAIN_TRIANGLE_SCALE: f32 = 1.0;
