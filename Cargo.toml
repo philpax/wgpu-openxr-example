@@ -16,8 +16,8 @@ openxr = {version = "0.17.0", features = ["loaded", "linked"], optional = true}
 tracing = "^0.1"
 tracing-subscriber = { version = "^0.3", features = ["env-filter"] }
 tracing-log = "0.1.3"
-wgpu = "0.13.1"
-wgpu-hal = {version = "0.13.1", optional = true}
+wgpu = "0.16.0"
+wgpu-hal = {version = "0.16.0", optional = true}
 winit = "0.27.3"
 
 [features]

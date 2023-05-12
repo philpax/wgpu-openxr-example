@@ -7,6 +7,7 @@ use anyhow::Context;
 use ash::vk::{self, Handle};
 use glam::{Quat, Vec3};
 use openxr::{self as xr, ViewConfigurationView};
+use wgpu::TextureFormat;
 
 use crate::{texture::Texture, types::VIEW_COUNT, WgpuState};
 
@@ -110,7 +111,7 @@ impl XrState {
 
         let vk_entry = unsafe { ash::Entry::load() }?;
         let flags = wgpu_hal::InstanceFlags::empty();
-        let mut extensions = <V as Api>::Instance::required_extensions(&vk_entry, flags)?;
+        let mut extensions = <V as Api>::Instance::required_extensions(&vk_entry, 0, flags)?;
 
         log::info!(
             "creating vulkan instance with these extensions: {:#?}",
@@ -185,18 +186,18 @@ impl XrState {
 
         let (wgpu_open_device, vk_device_ptr, queue_family_index) =
             {
-                let uab_types = wgpu_hal::UpdateAfterBindTypes::from_limits(
-                    &wgpu_limits,
-                    &wgpu_exposed_adapter
-                        .adapter
-                        .physical_device_capabilities()
-                        .properties()
-                        .limits,
-                );
+                // let uab_types = wgpu::Features::from_limits(
+                //     &wgpu_limits,
+                //     &wgpu_exposed_adapter
+                //         .adapter
+                //         .physical_device_capabilities()
+                //         .properties()
+                //         .limits,
+                // );
 
                 let mut enabled_phd_features = wgpu_exposed_adapter
                     .adapter
-                    .physical_device_features(&enabled_extensions, wgpu_features, uab_types);
+                    .physical_device_features(&enabled_extensions, wgpu_features);
                 let family_index = 0;
                 let family_info = vk::DeviceQueueCreateInfo::builder()
                     .queue_family_index(family_index)
@@ -237,7 +238,6 @@ impl XrState {
                         true,
                         &enabled_extensions,
                         wgpu_features,
-                        uab_types,
                         family_info.queue_family_index,
                         0,
                     )
@@ -435,6 +435,7 @@ impl XrState {
             // We'll want to track our own information about the swapchain, so we can draw stuff
             // onto it! We'll also create a buffer for each generated texture here as well.
             let images = handle.enumerate_images().unwrap();
+            let view_formats = vec![WGPU_COLOR_FORMAT];
             Swapchain {
                 handle,
                 resolution,
@@ -459,6 +460,7 @@ impl XrState {
                                     usage: wgpu_hal::TextureUses::COLOR_TARGET
                                         | wgpu_hal::TextureUses::COPY_DST,
                                     memory_flags: wgpu_hal::MemoryFlags::empty(),
+                                    view_formats: view_formats.clone(),
                                 },
                                 None,
                             )
@@ -479,12 +481,13 @@ impl XrState {
                                     format: WGPU_COLOR_FORMAT,
                                     usage: wgpu::TextureUsages::RENDER_ATTACHMENT
                                         | wgpu::TextureUsages::COPY_DST,
+                                    view_formats: &view_formats,
                                 },
                             )
                         };
                         let view = texture.create_view(&wgpu::TextureViewDescriptor {
                             dimension: Some(wgpu::TextureViewDimension::D2Array),
-                            array_layer_count: NonZeroU32::new(VIEW_COUNT),
+                            array_layer_count: Some(VIEW_COUNT),
                             ..Default::default()
                         });
                         Texture::from_wgpu(texture, view)

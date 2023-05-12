@@ -35,6 +35,7 @@ pub mod wgsl;
 use blit_state::BlitState;
 use camera::CameraState;
 use clap::{command, Parser};
+use wgpu::{Backends, InstanceDescriptor};
 use main_state::{Instance, MainState};
 use texture::Texture;
 use types::*;
@@ -88,7 +89,7 @@ fn main() -> anyhow::Result<()> {
             view.recommended_image_rect_width,
             view.recommended_image_rect_height,
         ));
-        let surface = unsafe { wgpu_state.instance.create_surface(&window) };
+        let surface = unsafe { wgpu_state.instance.create_surface(&window) }.unwrap();
         (wgpu_state, surface, Some(xr_state))
     } else {
         let (wgpu_state, surface) = create_wgpu_state(&window, wgpu_features, wgpu_limits)?;
@@ -102,7 +103,7 @@ fn main() -> anyhow::Result<()> {
 
     let preprocessor = wgsl::Preprocessor::from_directory(Path::new("shaders"))?;
 
-    let window_swapchain_format = surface.get_supported_formats(&wgpu_state.adapter)[0];
+    let window_swapchain_format = surface.get_capabilities(&wgpu_state.adapter).formats[0];
     let mut main_state = MainState::new(
         &wgpu_state.device,
         &preprocessor,
@@ -126,7 +127,7 @@ fn main() -> anyhow::Result<()> {
             ),
         ],
     );
-
+    let view_formats = vec![window_swapchain_format];
     let mut config = {
         let size = window.inner_size();
         wgpu::SurfaceConfiguration {
@@ -135,6 +136,8 @@ fn main() -> anyhow::Result<()> {
             width: size.width,
             height: size.height,
             present_mode: wgpu::PresentMode::Immediate,
+            alpha_mode: Default::default(),
+            view_formats: view_formats,
         }
     };
     surface.configure(&wgpu_state.device, &config);
@@ -195,6 +198,7 @@ fn main() -> anyhow::Result<()> {
                 config.width = size.width;
                 config.height = size.height;
                 surface.configure(&wgpu_state.device, &config);
+                println!("hi");
                 depth_texture = Texture::new_depth_texture(&wgpu_state.device, &config);
                 rt_texture =
                     Texture::new_rt_texture(&wgpu_state.device, &config, window_swapchain_format);
@@ -357,8 +361,10 @@ fn create_wgpu_state(
     wgpu_features: wgpu::Features,
     wgpu_limits: wgpu::Limits,
 ) -> anyhow::Result<(WgpuState, wgpu::Surface)> {
-    let instance = wgpu::Instance::new(wgpu::Backends::all());
-    let surface = unsafe { instance.create_surface(&window) };
+    let mut instance_descriptor = InstanceDescriptor::default();
+    instance_descriptor.backends = Backends::VULKAN;
+    let instance = wgpu::Instance::new(instance_descriptor);
+    let surface = unsafe { instance.create_surface(&window) }?;
     let adapter =
         futures::executor::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
             power_preference: wgpu::PowerPreference::default(),
