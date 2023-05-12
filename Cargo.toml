@@ -12,7 +12,7 @@ clap = { version = "4.0.8", features = ["derive"] }
 futures = "0.3.24"
 glam = "0.21.3"
 log = "^0.4"
-openxr = {version = "0.17.0", features = ["loaded", "linked", "static"], optional = true}
+openxr = {version = "0.17.0", features = ["loaded", "linked"], optional = true}
 tracing = "^0.1"
 tracing-subscriber = { version = "^0.3", features = ["env-filter"] }
 tracing-log = "0.1.3"

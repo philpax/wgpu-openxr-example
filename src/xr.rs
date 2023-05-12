@@ -111,7 +111,7 @@ impl XrState {
         let vk_entry = unsafe { ash::Entry::load() }?;
         let flags = wgpu_hal::InstanceFlags::empty();
         let mut extensions = <V as Api>::Instance::required_extensions(&vk_entry, flags)?;
-        extensions.push(ash::extensions::khr::Swapchain::name());
+
         log::info!(
             "creating vulkan instance with these extensions: {:#?}",
             extensions
@@ -147,7 +147,6 @@ impl XrState {
             )
         };
         log::info!("created vulkan instance");
-
         let vk_instance_ptr = vk_instance.handle().as_raw() as *const c_void;
 
         let vk_physical_device = vk::PhysicalDevice::from_raw(unsafe {
@@ -179,9 +178,10 @@ impl XrState {
             .expose_adapter(vk_physical_device)
             .context("failed to expose adapter")?;
 
-        let enabled_extensions = wgpu_exposed_adapter
+        let mut enabled_extensions = wgpu_exposed_adapter
             .adapter
             .required_device_extensions(wgpu_features);
+        enabled_extensions.push(ash::extensions::khr::Swapchain::name());
 
         let (wgpu_open_device, vk_device_ptr, queue_family_index) =
             {
@@ -203,9 +203,11 @@ impl XrState {
                     .queue_priorities(&[1.0])
                     .build();
                 let family_infos = [family_info];
+                let things = vec![ash::extensions::khr::Swapchain::name().as_ptr()];
                 let info = enabled_phd_features
                     .add_to_device_create_builder(
                         vk::DeviceCreateInfo::builder()
+                            .enabled_extension_names(&things)
                             .queue_create_infos(&family_infos)
                             .push_next(&mut vk::PhysicalDeviceMultiviewFeatures {
                                 multiview: vk::TRUE,
