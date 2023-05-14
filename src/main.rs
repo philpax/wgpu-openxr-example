@@ -89,7 +89,7 @@ fn main() -> anyhow::Result<()> {
             view.recommended_image_rect_width,
             view.recommended_image_rect_height,
         ));
-        let surface = unsafe { wgpu_state.instance.create_surface(&window) }.unwrap();
+        let surface = unsafe { wgpu_state.instance.create_surface(&window) }?;
         (wgpu_state, surface, Some(xr_state))
     } else {
         let (wgpu_state, surface) = create_wgpu_state(&window, wgpu_features, wgpu_limits)?;
@@ -198,7 +198,6 @@ fn main() -> anyhow::Result<()> {
                 config.width = size.width;
                 config.height = size.height;
                 surface.configure(&wgpu_state.device, &config);
-                println!("hi");
                 depth_texture = Texture::new_depth_texture(&wgpu_state.device, &config);
                 rt_texture =
                     Texture::new_rt_texture(&wgpu_state.device, &config, window_swapchain_format);

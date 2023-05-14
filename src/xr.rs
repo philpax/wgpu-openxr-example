@@ -186,15 +186,6 @@ impl XrState {
 
         let (wgpu_open_device, vk_device_ptr, queue_family_index) =
             {
-                // let uab_types = wgpu::Features::from_limits(
-                //     &wgpu_limits,
-                //     &wgpu_exposed_adapter
-                //         .adapter
-                //         .physical_device_capabilities()
-                //         .properties()
-                //         .limits,
-                // );
-
                 let mut enabled_phd_features = wgpu_exposed_adapter
                     .adapter
                     .physical_device_features(&enabled_extensions, wgpu_features);
