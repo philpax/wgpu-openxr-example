@@ -1,6 +1,8 @@
 use std::num::NonZeroU32;
+use wgpu::TextureFormat;
 
 use crate::types::{DEPTH_FORMAT, VIEW_COUNT};
+use crate::xr::WGPU_COLOR_FORMAT;
 
 pub struct Texture {
     _texture: wgpu::Texture,
@@ -21,6 +23,7 @@ impl Texture {
         config: &wgpu::SurfaceConfiguration,
         texture_format: wgpu::TextureFormat,
     ) -> Self {
+        let view_formats = vec![texture_format];
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("Render Target Texture"),
             size: wgpu::Extent3d {
@@ -35,12 +38,9 @@ impl Texture {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT
                 | wgpu::TextureUsages::COPY_SRC
                 | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &view_formats,
         });
-        let view = texture.create_view(&wgpu::TextureViewDescriptor {
-            dimension: Some(wgpu::TextureViewDimension::D2Array),
-            array_layer_count: NonZeroU32::new(VIEW_COUNT),
-            ..Default::default()
-        });
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
         Self {
             _texture: texture,
             view,
@@ -48,6 +48,7 @@ impl Texture {
     }
 
     pub fn new_depth_texture(device: &wgpu::Device, config: &wgpu::SurfaceConfiguration) -> Self {
+        let view_formats = vec![DEPTH_FORMAT];
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("Depth Texture"),
             size: wgpu::Extent3d {
@@ -60,12 +61,9 @@ impl Texture {
             dimension: wgpu::TextureDimension::D2,
             format: DEPTH_FORMAT,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &view_formats,
         });
-        let view = texture.create_view(&wgpu::TextureViewDescriptor {
-            dimension: Some(wgpu::TextureViewDimension::D2Array),
-            array_layer_count: NonZeroU32::new(VIEW_COUNT),
-            ..Default::default()
-        });
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
         Self {
             _texture: texture,
             view,
