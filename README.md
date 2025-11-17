@@ -1,6 +1,6 @@
 # wgpu-openxr-example
 
-**NOTICE**: This example has not been updated since November 2022. Since then, both `wgpu` and OpenXR have evolved in ways this example won't capture. For a 2025-appropriate integration, consider using [@celphase]()'s [`indite`](https://github.com/celphase/indite).
+**NOTICE**: This example has not been updated since November 2022. Since then, both `wgpu` and OpenXR have evolved in ways this example won't capture. For a 2025-appropriate integration, consider using [@celphase](https://github.com/celphase)'s [`indite`](https://github.com/celphase/indite).
 
 ---
 
